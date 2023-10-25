@@ -1,15 +1,35 @@
 import pygame
 import sys
+import random
+from pygame.math import Vector2
+
+
+class FRUIT:
+    def __init__(self):
+        self.x = random.randint(0, cell_number - 1)
+        self.y = random.randint(0, cell_number - 1)
+        self.pos = Vector2(self.x, self.y)
+
+    def draw_fruit(self):
+        fruit_rect = pygame.Rect(int(self.pos.x * cell_size), int(self.pos.y * cell_size), cell_size, cell_size)
+        pygame.draw.rect(screen, (126, 166, 114), fruit_rect)
+
 
 pygame.init()
-screen = pygame.display.set_mode((500, 500)) #sets screen size
-clock = pygame.time.Clock() #create clock object to limit fps
+cell_size = 40
+cell_number = 20
+screen = pygame.display.set_mode((cell_number * cell_size, cell_number * cell_size))  
+clock = pygame.time.Clock()  
+
+fruit = FRUIT()
 
 while True:
-    # Draw our elements
     for event in pygame.event.get():
-        if event.type == pygame.QUIT: #user clicks x to close window
+        if event.type == pygame.QUIT:
             pygame.quit()
-            sys.quit()
+            sys.exit()
+
+    screen.fill((175, 220, 75))  
+    fruit.draw_fruit()
     pygame.display.update()
-    clock.tick(60) #limits fps to 60
+    clock.tick(60) 
