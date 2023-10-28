@@ -25,47 +25,69 @@ class SNAKE:
         self.body = [Vector2(5, 10), Vector2(4, 10), Vector2(3, 10)]
         self.direction = Vector2(1, 0)
         self.new_block = False
-        
-        self.head_up = pygame.image.load('Graphics/head_up.png').convert_alpha()
-        self.head_down = pygame.image.load('Graphics/head_down.png').convert_alpha()
-        self.head_right = pygame.image.load('Graphics/head_right.png').convert_alpha()
-        self.head_left = pygame.image.load('Graphics/head_left.png').convert_alpha()
-        
-        self.tail_up = pygame.image.load('Graphics/tail_up.png').convert_alpha() 
-        self.tail_down = pygame.image.load('Graphics/tail_down.png').convert_alpha()
-        self.tail_right = pygame.image.load('Graphics/tail_right.png').convert_alpha()  
-        self.tail_left = pygame.image.load('Graphics/tail_left.png').convert_alpha()
-        
-        self.body_vertical = pygame.image.load('Graphics/body_vertical.png').convert_alpha()
-        self.body_horizontal = pygame.image.load('Graphics/body_horizontal.png').convert_alpha()
-        
-        self.b_up_right = pygame.image.load('Graphics/b_up_right.png').convert_alpha()
-        self.b_up_left = pygame.image.load('Graphics/b_up_left.png').convert_alpha()
-        self.b_down_right = pygame.image.load('Graphics/b_down_right.png').convert_alpha()
-        self.b_down_left = pygame.image.load('Graphics/b_down_left.png').convert_alpha()
-        
+
+        self.head_up = pygame.image.load(
+            'Graphics/head_up.png').convert_alpha()
+        self.head_down = pygame.image.load(
+            'Graphics/head_down.png').convert_alpha()
+        self.head_right = pygame.image.load(
+            'Graphics/head_right.png').convert_alpha()
+        self.head_left = pygame.image.load(
+            'Graphics/head_left.png').convert_alpha()
+
+        self.tail_up = pygame.image.load(
+            'Graphics/tail_up.png').convert_alpha()
+        self.tail_down = pygame.image.load(
+            'Graphics/tail_down.png').convert_alpha()
+        self.tail_right = pygame.image.load(
+            'Graphics/tail_right.png').convert_alpha()
+        self.tail_left = pygame.image.load(
+            'Graphics/tail_left.png').convert_alpha()
+
+        self.body_vertical = pygame.image.load(
+            'Graphics/body_vertical.png').convert_alpha()
+        self.body_horizontal = pygame.image.load(
+            'Graphics/body_horizontal.png').convert_alpha()
+
+        self.b_up_right = pygame.image.load(
+            'Graphics/b_up_right.png').convert_alpha()
+        self.b_up_left = pygame.image.load(
+            'Graphics/b_up_left.png').convert_alpha()
+        self.b_right_down = pygame.image.load(
+            'Graphics/b_right_down.png').convert_alpha()
+        self.b_left_down = pygame.image.load(
+            'Graphics/b_left_down.png').convert_alpha()
+
     def draw_snake(self):
         self.update_head_graphics()
         self.update_tail_graphics()
-        
-        for index,block in enumerate(self.body): 
+
+        for index, block in enumerate(self.body):
             x_snake = int(block.x * cell_size)
             y_snake = int(block.y * cell_size)
             block_rect = pygame.Rect(x_snake, y_snake, cell_size, cell_size)
-            
+
             if index == 0:
                 screen.blit(self.head, block_rect)
-            elif index == len(self.body) - 1: 
+            elif index == len(self.body) - 1:
                 screen.blit(self.tail, block_rect)
-            else: 
+            else:
                 previous_block = self.body[index + 1] - block
                 next_block = self.body[index - 1] - block
                 if previous_block.x == next_block.x:
                     screen.blit(self.body_vertical, block_rect)
                 elif previous_block.y == next_block.y:
                     screen.blit(self.body_horizontal, block_rect)
-                
-    
+                else:
+                    if previous_block.x == 1 and next_block.y == -1 or previous_block.y == -1 and next_block.x == 1:
+                        screen.blit(self.b_up_right, block_rect)
+                    elif previous_block.x == -1 and next_block.y == -1 or previous_block.y == -1 and next_block.x == -1:
+                        screen.blit(self.b_up_left, block_rect)
+                    elif previous_block.x == 1 and next_block.y == 1 or previous_block.y == 1 and next_block.x == 1:
+                        screen.blit(self.b_right_down, block_rect)
+                    elif previous_block.x == -1 and next_block.y == 1 or previous_block.y == 1 and next_block.x == -1:
+                        screen.blit(self.b_left_down, block_rect)
+
     def update_head_graphics(self):
         head_relation = self.body[1] - self.body[0]
         if head_relation == Vector2(0, 1):
@@ -73,10 +95,10 @@ class SNAKE:
         elif head_relation == Vector2(0, -1):
             self.head = self.head_down
         elif head_relation == Vector2(-1, 0):
-            self.head = self.head_right   
+            self.head = self.head_right
         elif head_relation == Vector2(1, 0):
-            self.head = self.head_left   
-    
+            self.head = self.head_left
+
     def update_tail_graphics(self):
         tail_relation = self.body[-2] - self.body[-1]
         if tail_relation == Vector2(0, -1):
@@ -84,9 +106,9 @@ class SNAKE:
         elif tail_relation == Vector2(0, 1):
             self.tail = self.tail_down
         elif tail_relation == Vector2(1, 0):
-            self.tail = self.tail_right   
+            self.tail = self.tail_right
         elif tail_relation == Vector2(-1, 0):
-            self.tail = self.tail_left          
+            self.tail = self.tail_left
 
     def move_snake(self):
         if self.new_block == True:
@@ -141,19 +163,22 @@ class MAIN:
             if row % 2 == 0:
                 for col in range(cell_number):
                     if col % 2 == 0:
-                        grass_rect = pygame.Rect(col * cell_size, row * cell_size, cell_size, cell_size)
+                        grass_rect = pygame.Rect(
+                            col * cell_size, row * cell_size, cell_size, cell_size)
                         pygame.draw.rect(screen, grass_color, grass_rect)
             else:
                 for col in range(cell_number):
                     if col % 2 != 0:
-                        grass_rect = pygame.Rect(col * cell_size, row * cell_size, cell_size, cell_size)
+                        grass_rect = pygame.Rect(
+                            col * cell_size, row * cell_size, cell_size, cell_size)
                         pygame.draw.rect(screen, grass_color, grass_rect)
 
 
 pygame.init()
 cell_size = 40
 cell_number = 20
-screen = pygame.display.set_mode((cell_number * cell_size, cell_number * cell_size))
+screen = pygame.display.set_mode(
+    (cell_number * cell_size, cell_number * cell_size))
 clock = pygame.time.Clock()
 
 apple = pygame.image.load('Graphics/apple.png').convert_alpha()
