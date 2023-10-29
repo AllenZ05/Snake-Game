@@ -25,7 +25,11 @@ class SNAKE:
         self.body = [Vector2(5, 10), Vector2(4, 10), Vector2(3, 10)]
         self.direction = Vector2(0, 0)
         self.new_block = False
+        
+        self.snake_design()  
+        self.crunch_sound = pygame.mixer.Sound('Sound/crunch.wav')
 
+    def snake_design(self): 
         self.head_up = pygame.image.load(
             'Graphics/head_up.png').convert_alpha()
         self.head_down = pygame.image.load(
@@ -57,8 +61,6 @@ class SNAKE:
             'Graphics/b_right_down.png').convert_alpha()
         self.b_left_down = pygame.image.load(
             'Graphics/b_left_down.png').convert_alpha()
-
-        self.crunch_sound = pygame.mixer.Sound('Sound/crunch.wav')
 
     def draw_snake(self):
         self.update_head_graphics()
@@ -174,18 +176,10 @@ class MAIN:
     def draw_grass(self):
         grass_color = (167, 209, 61)
         for row in range(cell_number):
-            if row % 2 == 0:
-                for col in range(cell_number):
-                    if col % 2 == 0:
-                        grass_rect = pygame.Rect(
-                            col * cell_size, row * cell_size, cell_size, cell_size)
-                        pygame.draw.rect(screen, grass_color, grass_rect)
-            else:
-                for col in range(cell_number):
-                    if col % 2 != 0:
-                        grass_rect = pygame.Rect(
-                            col * cell_size, row * cell_size, cell_size, cell_size)
-                        pygame.draw.rect(screen, grass_color, grass_rect)
+            for col in range(cell_number):
+                grass_rect = pygame.Rect(col * cell_size, row * cell_size, cell_size, cell_size)
+                if (row + col) % 2 == 0:
+                    pygame.draw.rect(screen, grass_color, grass_rect)
 
     def draw_score(self):
         score_text = str(len(self.snake.body) - 3)
