@@ -58,6 +58,8 @@ class SNAKE:
         self.b_left_down = pygame.image.load(
             'Graphics/b_left_down.png').convert_alpha()
 
+        self.crunch_sound = pygame.mixer.Sound('Sound/crunch.wav')
+
     def draw_snake(self):
         self.update_head_graphics()
         self.update_tail_graphics()
@@ -124,6 +126,9 @@ class SNAKE:
     def add_block(self):
         self.new_block = True
 
+    def play_crunch_sound(self):
+        self.crunch_sound.play()
+
 
 class MAIN:
     def __init__(self):
@@ -145,6 +150,7 @@ class MAIN:
         if self.fruit.pos == self.snake.body[0]:
             self.fruit.randomize()
             self.snake.add_block()
+            self.snake.play_crunch_sound()
 
     def check_fail(self):
         if not 0 <= self.snake.body[0].x < cell_number or not 0 <= self.snake.body[0].y < cell_number:
@@ -173,21 +179,25 @@ class MAIN:
                         grass_rect = pygame.Rect(
                             col * cell_size, row * cell_size, cell_size, cell_size)
                         pygame.draw.rect(screen, grass_color, grass_rect)
-        
+
     def draw_score(self):
         score_text = str(len(self.snake.body) - 3)
         score_surface = game_font.render(score_text, True, (56, 74, 12))
-        score_x = int(cell_size * cell_number - 60)
+        score_x = int(cell_size * cell_number - 40)
         score_y = int(cell_size * cell_number - 40)
-        score_rect = score_surface.get_rect(center = (score_x, score_y))
-        apple_rect = apple.get_rect(midright = (score_rect.left, score_rect.centery)) 
-        bg_score_rect = pygame.Rect(apple_rect.left, apple_rect.top, apple_rect.width + score_rect.width + 6, apple_rect.height)  
-        
+        score_rect = score_surface.get_rect(center=(score_x, score_y))
+        apple_rect = apple.get_rect(
+            midright=(score_rect.left, score_rect.centery))
+        bg_score_rect = pygame.Rect(apple_rect.left, apple_rect.top,
+                                    apple_rect.width + score_rect.width + 4, apple_rect.height + 4)
+
         pygame.draw.rect(screen, (167, 209, 61), bg_score_rect)
         screen.blit(score_surface, score_rect)
         screen.blit(apple, apple_rect)
         pygame.draw.rect(screen, (56, 74, 12), bg_score_rect, 2)
-        
+
+
+pygame.mixer.pre_init(44100, -16, 2, 512)
 pygame.init()
 cell_size = 40
 cell_number = 20
