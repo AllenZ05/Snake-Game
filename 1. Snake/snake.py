@@ -25,42 +25,28 @@ class SNAKE:
         self.body = [Vector2(5, 10), Vector2(4, 10), Vector2(3, 10)]
         self.direction = Vector2(0, 0)
         self.new_block = False
-        
-        self.snake_design()  
+
+        self.snake_design()
         self.crunch_sound = pygame.mixer.Sound('Sound/crunch.wav')
 
-    def snake_design(self): 
-        self.head_up = pygame.image.load(
-            'Graphics/head_up.png').convert_alpha()
-        self.head_down = pygame.image.load(
-            'Graphics/head_down.png').convert_alpha()
-        self.head_right = pygame.image.load(
-            'Graphics/head_right.png').convert_alpha()
-        self.head_left = pygame.image.load(
-            'Graphics/head_left.png').convert_alpha()
+    def snake_design(self):
+        self.head_up = pygame.image.load('Graphics/head_up.png').convert_alpha()
+        self.head_down = pygame.image.load('Graphics/head_down.png').convert_alpha()
+        self.head_right = pygame.image.load('Graphics/head_right.png').convert_alpha()
+        self.head_left = pygame.image.load('Graphics/head_left.png').convert_alpha()
 
-        self.tail_up = pygame.image.load(
-            'Graphics/tail_up.png').convert_alpha()
-        self.tail_down = pygame.image.load(
-            'Graphics/tail_down.png').convert_alpha()
-        self.tail_right = pygame.image.load(
-            'Graphics/tail_right.png').convert_alpha()
-        self.tail_left = pygame.image.load(
-            'Graphics/tail_left.png').convert_alpha()
+        self.tail_up = pygame.image.load('Graphics/tail_up.png').convert_alpha()
+        self.tail_down = pygame.image.load('Graphics/tail_down.png').convert_alpha()
+        self.tail_right = pygame.image.load('Graphics/tail_right.png').convert_alpha()
+        self.tail_left = pygame.image.load('Graphics/tail_left.png').convert_alpha()
 
-        self.body_vertical = pygame.image.load(
-            'Graphics/body_vertical.png').convert_alpha()
-        self.body_horizontal = pygame.image.load(
-            'Graphics/body_horizontal.png').convert_alpha()
+        self.body_vertical = pygame.image.load('Graphics/body_vertical.png').convert_alpha()
+        self.body_horizontal = pygame.image.load('Graphics/body_horizontal.png').convert_alpha()
 
-        self.b_up_right = pygame.image.load(
-            'Graphics/b_up_right.png').convert_alpha()
-        self.b_up_left = pygame.image.load(
-            'Graphics/b_up_left.png').convert_alpha()
-        self.b_right_down = pygame.image.load(
-            'Graphics/b_right_down.png').convert_alpha()
-        self.b_left_down = pygame.image.load(
-            'Graphics/b_left_down.png').convert_alpha()
+        self.b_up_right = pygame.image.load('Graphics/b_up_right.png').convert_alpha()
+        self.b_up_left = pygame.image.load('Graphics/b_up_left.png').convert_alpha()
+        self.b_right_down = pygame.image.load('Graphics/b_right_down.png').convert_alpha()
+        self.b_left_down = pygame.image.load('Graphics/b_left_down.png').convert_alpha()
 
     def draw_snake(self):
         self.update_head_graphics()
@@ -187,10 +173,9 @@ class MAIN:
         score_x = int(cell_size * cell_number - 40)
         score_y = int(cell_size * cell_number - 40)
         score_rect = score_surface.get_rect(center=(score_x, score_y))
-        apple_rect = apple.get_rect(
-            midright=(score_rect.left, score_rect.centery))
-        bg_score_rect = pygame.Rect(apple_rect.left, apple_rect.top,
-                                    apple_rect.width + score_rect.width + 4, apple_rect.height + 4)
+        apple_rect = apple.get_rect(midright=(score_rect.left, score_rect.centery))
+        bg_score_rect = pygame.Rect(apple_rect.left, apple_rect.top, apple_rect.width +
+                                    score_rect.width + 4, apple_rect.height + 4)
 
         pygame.draw.rect(screen, (167, 209, 61), bg_score_rect)
         screen.blit(score_surface, score_rect)
@@ -202,8 +187,7 @@ pygame.mixer.pre_init(44100, -16, 2, 512)
 pygame.init()
 cell_size = 40
 cell_number = 20
-screen = pygame.display.set_mode(
-    (cell_number * cell_size, cell_number * cell_size))
+screen = pygame.display.set_mode((cell_number * cell_size, cell_number * cell_size))
 clock = pygame.time.Clock()
 
 apple = pygame.image.load('Graphics/apple.png').convert_alpha()
