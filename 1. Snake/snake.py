@@ -3,7 +3,6 @@ import sys
 import random
 from pygame.math import Vector2
 
-
 class FRUIT:
     def __init__(self):
         self.randomize()
@@ -23,7 +22,7 @@ class FRUIT:
 class SNAKE:
     def __init__(self):
         self.body = [Vector2(5, 10), Vector2(4, 10), Vector2(3, 10)]
-        self.direction = Vector2(0, 0)
+        self.direction = Vector2(1, 0)  
         self.new_block = False
 
         self.snake_design()
@@ -122,10 +121,14 @@ class SNAKE:
         self.direction = Vector2(0, 0)
 
 
+
 class MAIN:
     def __init__(self):
         self.fruit = FRUIT()
         self.snake = SNAKE()
+        self.game_over = False
+        while self.fruit.pos in self.snake.body:
+            self.fruit.randomize()
 
     def update(self):
         self.snake.move_snake()
@@ -144,20 +147,15 @@ class MAIN:
             self.snake.add_block()
             self.snake.play_crunch_sound()
 
-        for block in self.snake.body[1:]:
-            if block == self.fruit.pos:
-                self.fruit.randomize()
-
     def check_fail(self):
         if not 0 <= self.snake.body[0].x < cell_number or not 0 <= self.snake.body[0].y < cell_number:
-            self.game_over()
-
-        for block in self.snake.body[1:]:
-            if block == self.snake.body[0]:
-                self.game_over()
-
-    def game_over(self):
-        self.snake.reset()
+            print("Game over: Snake hit the wall.")
+            self.game_over = True
+        elif self.snake.direction != Vector2(0, 0):  
+            for block in self.snake.body[1:]:
+                if block == self.snake.body[0]:
+                    print("Game over: Snake hit itself.")
+                    self.game_over = True
 
     def draw_grass(self):
         grass_color = (167, 209, 61)
@@ -183,6 +181,21 @@ class MAIN:
         pygame.draw.rect(screen, (56, 74, 12), bg_score_rect, 2)
 
 
+def save_high_score(high_score):
+    with open("high_score.txt", "w") as f:
+        f.write(str(high_score))
+
+
+def load_high_score():
+    try:
+        with open("high_score.txt", "r") as f:
+            return int(f.read())
+    except FileNotFoundError:
+        return 0
+
+
+high_score = load_high_score()
+
 pygame.mixer.pre_init(44100, -16, 2, 512)
 pygame.init()
 cell_size = 40
@@ -200,28 +213,70 @@ pygame.time.set_timer(SCREEN_UPDATE, 150)
 
 main_game = MAIN()
 
+screen_width = cell_number * cell_size
+screen_height = cell_number * cell_size
+
+
+def draw_death_screen(score, high_score):
+    screen.fill((50, 50, 50))  
+
+    game_over_surface = game_font.render('Game Over', True, (255, 255, 255))
+    score_surface = game_font.render(f'Your Score: {score}', True, (255, 255, 255))
+    high_score_surface = game_font.render(f'High Score: {high_score}', True, (255, 255, 255))
+    play_again_surface = game_font.render('Play Again', True, (255, 255, 255))
+
+    game_over_rect = game_over_surface.get_rect(center=(screen_width / 2, screen_height / 4))
+    score_rect = score_surface.get_rect(center=(screen_width / 2, screen_height / 3))
+    high_score_rect = high_score_surface.get_rect(center=(screen_width / 2, screen_height / 2))
+    play_again_rect = play_again_surface.get_rect(center=(screen_width / 2, screen_height * 3/4))
+
+    screen.blit(game_over_surface, game_over_rect)
+    screen.blit(score_surface, score_rect)
+    screen.blit(high_score_surface, high_score_rect)
+    screen.blit(play_again_surface, play_again_rect)
+
+    pygame.draw.rect(screen, (255, 255, 255), play_again_rect, 2)
+
+    return play_again_rect  
+
+
 while True:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             pygame.quit()
             sys.exit()
-        if event.type == SCREEN_UPDATE:
-            main_game.update()
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_UP or event.key == pygame.K_w:
-                if main_game.snake.direction.y != 1:
-                    main_game.snake.direction = Vector2(0, -1)
-            if event.key == pygame.K_DOWN or event.key == pygame.K_s:
-                if main_game.snake.direction.y != -1:
-                    main_game.snake.direction = Vector2(0, 1)
-            if event.key == pygame.K_RIGHT or event.key == pygame.K_d:
-                if main_game.snake.direction.x != -1:
-                    main_game.snake.direction = Vector2(1, 0)
-            if event.key == pygame.K_LEFT or event.key == pygame.K_a:
-                if main_game.snake.direction.x != 1:
-                    main_game.snake.direction = Vector2(-1, 0)
+        if main_game.game_over:
+            play_again_button = draw_death_screen(len(main_game.snake.body) - 3, high_score)
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                mouse_pos = pygame.mouse.get_pos()
+                if play_again_button.collidepoint(mouse_pos):
+                    current_score = len(main_game.snake.body) - 3
+                    if current_score > high_score:
+                        high_score = current_score
+                        save_high_score(high_score)
+                    main_game = MAIN()  
+        else:
+            if event.type == SCREEN_UPDATE:
+                main_game.update()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_UP or event.key == pygame.K_w:
+                    if main_game.snake.direction.y != 1:
+                        main_game.snake.direction = Vector2(0, -1)
+                if event.key == pygame.K_DOWN or event.key == pygame.K_s:
+                    if main_game.snake.direction.y != -1:
+                        main_game.snake.direction = Vector2(0, 1)
+                if event.key == pygame.K_RIGHT or event.key == pygame.K_d:
+                    if main_game.snake.direction.x != -1:
+                        main_game.snake.direction = Vector2(1, 0)
+                if event.key == pygame.K_LEFT or event.key == pygame.K_a:
+                    if main_game.snake.direction.x != 1:
+                        main_game.snake.direction = Vector2(-1, 0)
 
-    screen.fill((175, 220, 75))
-    main_game.draw_elements()
+    if not main_game.game_over:
+        screen.fill((175, 220, 75))
+        main_game.draw_elements()
+    else:
+        draw_death_screen(len(main_game.snake.body) - 3, high_score)
+
     pygame.display.update()
     clock.tick(60)
