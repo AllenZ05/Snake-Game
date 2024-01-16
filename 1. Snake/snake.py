@@ -3,6 +3,7 @@ import sys
 import random
 from pygame.math import Vector2
 
+
 class FRUIT:
     def __init__(self):
         self.randomize()
@@ -22,7 +23,7 @@ class FRUIT:
 class SNAKE:
     def __init__(self):
         self.body = [Vector2(5, 10), Vector2(4, 10), Vector2(3, 10)]
-        self.direction = Vector2(1, 0)  
+        self.direction = Vector2(1, 0)
         self.new_block = False
 
         self.snake_design()
@@ -121,7 +122,6 @@ class SNAKE:
         self.direction = Vector2(0, 0)
 
 
-
 class MAIN:
     def __init__(self):
         self.fruit = FRUIT()
@@ -151,7 +151,7 @@ class MAIN:
         if not 0 <= self.snake.body[0].x < cell_number or not 0 <= self.snake.body[0].y < cell_number:
             print("Game over: Snake hit the wall.")
             self.game_over = True
-        elif self.snake.direction != Vector2(0, 0):  
+        elif self.snake.direction != Vector2(0, 0):
             for block in self.snake.body[1:]:
                 if block == self.snake.body[0]:
                     print("Game over: Snake hit itself.")
@@ -216,9 +216,11 @@ main_game = MAIN()
 screen_width = cell_number * cell_size
 screen_height = cell_number * cell_size
 
+game_font = pygame.font.Font(None, 40)
+
 
 def draw_death_screen(score, high_score):
-    screen.fill((50, 50, 50))  
+    screen.fill((50, 50, 50))
 
     game_over_surface = game_font.render('Game Over', True, (255, 255, 255))
     score_surface = game_font.render(f'Your Score: {score}', True, (255, 255, 255))
@@ -230,14 +232,19 @@ def draw_death_screen(score, high_score):
     high_score_rect = high_score_surface.get_rect(center=(screen_width / 2, screen_height / 2))
     play_again_rect = play_again_surface.get_rect(center=(screen_width / 2, screen_height * 3/4))
 
+    play_again_rect.inflate_ip(40, 20)
+
+    play_again_text_x = play_again_rect.x + (play_again_rect.width - play_again_surface.get_width()) // 2
+    play_again_text_y = play_again_rect.y + (play_again_rect.height - play_again_surface.get_height()) // 2
+
     screen.blit(game_over_surface, game_over_rect)
     screen.blit(score_surface, score_rect)
     screen.blit(high_score_surface, high_score_rect)
-    screen.blit(play_again_surface, play_again_rect)
+    screen.blit(play_again_surface, (play_again_text_x, play_again_text_y))
 
     pygame.draw.rect(screen, (255, 255, 255), play_again_rect, 2)
 
-    return play_again_rect  
+    return play_again_rect
 
 
 while True:
@@ -254,7 +261,7 @@ while True:
                     if current_score > high_score:
                         high_score = current_score
                         save_high_score(high_score)
-                    main_game = MAIN()  
+                    main_game = MAIN()
         else:
             if event.type == SCREEN_UPDATE:
                 main_game.update()
@@ -279,4 +286,4 @@ while True:
         draw_death_screen(len(main_game.snake.body) - 3, high_score)
 
     pygame.display.update()
-    clock.tick(60)
+    clock.tick(90)
