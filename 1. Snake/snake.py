@@ -206,8 +206,6 @@ clock = pygame.time.Clock()
 apple = pygame.image.load('Graphics/apple.png').convert_alpha()
 apple = pygame.transform.scale(apple, (cell_size, cell_size))
 
-game_font = pygame.font.Font(None, 25)
-
 SCREEN_UPDATE = pygame.USEREVENT
 pygame.time.set_timer(SCREEN_UPDATE, 150)
 
@@ -216,13 +214,14 @@ main_game = MAIN()
 screen_width = cell_number * cell_size
 screen_height = cell_number * cell_size
 
-game_font = pygame.font.Font(None, 40)
+game_font = pygame.font.Font(None, 30)
+main_font = pygame.font.Font(None, 50)
 
 
 def draw_death_screen(score, high_score):
     screen.fill((50, 50, 50))
 
-    game_over_surface = game_font.render('Game Over', True, (255, 255, 255))
+    game_over_surface = main_font.render('Game Over', True, (255, 255, 255))
     score_surface = game_font.render(f'Your Score: {score}', True, (255, 255, 255))
     high_score_surface = game_font.render(f'High Score: {high_score}', True, (255, 255, 255))
     play_again_surface = game_font.render('Play Again', True, (255, 255, 255))
@@ -286,4 +285,4 @@ while True:
         draw_death_screen(len(main_game.snake.body) - 3, high_score)
 
     pygame.display.update()
-    clock.tick(90)
+    clock.tick(60)
