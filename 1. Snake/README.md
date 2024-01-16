@@ -12,4 +12,6 @@ Snake Game inspired by the Google Snake Game. Implemented snake movement, collis
 - Python 
 - Pygame
 
+## Video Demo 
+
 https://github.com/AllenZ05/Python-Games/assets/124856383/2bca3b01-fde5-4ffe-9b3e-ca0c30c525be
