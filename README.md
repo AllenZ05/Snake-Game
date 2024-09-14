@@ -1,31 +1,30 @@
 # Snake Game 
 
-Snake Game inspired by the classic Snake Game. 
-
-Navigate the snake using WASD or arrow keys to consume food and grow while avoiding collisions with the walls or the snake itself. Have fun!
-
-### Timeline
-
-- **Main Development** (Oct 2023)
-- **Added new features** (Jan 2024) 
-
-## Tech Stack and tools used 
-
-- Python 
-- PyGame
+Inspired by the classic Snake Game. Navigate the snake using WASD or arrow keys to consume food and grow while avoiding collisions with the walls or yourself. Enjoy the retro feel with added sound effects and smooth animations for an engaging gaming experience 
 
 ## Features
 
-- Responsive snake movement with WASD or arrow key controls
-- Collision detection and immersive sound effects
-- Dynamic game over screen with score tracking
-- Engaging snake graphics and fluid animations for a user-friendly interface
+- **Smooth Snake Movement:** Control the snake with responsive WASD or arrow key inputs
+- **Collision Detection:** Game-over triggers when the snake hits a wall or its own body
+- **Sound Effects:** Immersive sounds to enhance the gameplay experience
+- **Score Tracking:** Dynamic game-over screen displays your score and high score after each round
+- **Engaging Graphics:** Fluid animations and attractive snake graphics for a user-friendly interface
+
+## Tech Stack and tools used 
+
+- **Programming Language:** Python
+- **Game Library:** PyGame
 
 ## Getting Started
 
-- **Clone** the repository
-- **Install** Pygame: `pip install pygame`
-- **Run** the game: `python main.py`
+1. **Clone** the repository
+2. **Install** Pygame: `pip install pygame`
+3. **Run** the game: `python main.py`
+
+## Timeline
+
+- **Main Development:** Oct 2023
+- **New Features Added:** Jan 2024
 
 ## Video Demo 
 
