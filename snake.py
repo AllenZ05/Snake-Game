@@ -1,288 +1,430 @@
-import pygame
-import sys
+"""Classic Snake game built with pygame.
+
+Pick a map size, apple count, and speed from the menu, steer with WASD
+or the arrow keys, eat apples to grow, and avoid the walls and your own
+tail.
+"""
+
+from __future__ import annotations
+
+import json
 import random
+import sys
+from collections import deque
+from pathlib import Path
+
+import pygame
 from pygame.math import Vector2
 
+BASE_DIR = Path(__file__).resolve().parent
+GRAPHICS_DIR = BASE_DIR / "Graphics"
+SOUND_DIR = BASE_DIR / "Sound"
+HIGH_SCORES_FILE = BASE_DIR / "high_scores.json"
 
-class FRUIT:
-    def __init__(self):
-        self.randomize()
+CELL_SIZE = 40
+MAP_SIZES = {"Small": 12, "Medium": 16, "Large": 20}
+APPLE_COUNTS = (1, 3, 5)
+SPEEDS = {"Slow": 200, "Normal": 150, "Fast": 100}  # ms per move
+MENU_WINDOW_SIZE = 640
+FPS = 60
+STARTING_LENGTH = 3
 
-    def draw_fruit(self):
-        x_fruit = int(self.pos.x * cell_size)
-        y_fruit = int(self.pos.y * cell_size)
-        fruit_rect = pygame.Rect(x_fruit, y_fruit, cell_size, cell_size)
-        screen.blit(apple, fruit_rect)
+GRASS_LIGHT = (175, 220, 75)
+GRASS_DARK = (167, 209, 61)
+TEXT_GREEN = (56, 74, 12)
+DEATH_SCREEN_BG = (50, 50, 50)
+WHITE = (255, 255, 255)
 
-    def randomize(self):
-        self.x = random.randint(0, cell_number - 1)
-        self.y = random.randint(0, cell_number - 1)
-        self.pos = Vector2(self.x, self.y)
+UP = Vector2(0, -1)
+DOWN = Vector2(0, 1)
+LEFT = Vector2(-1, 0)
+RIGHT = Vector2(1, 0)
+
+KEY_DIRECTIONS = {
+    pygame.K_UP: UP, pygame.K_w: UP,
+    pygame.K_DOWN: DOWN, pygame.K_s: DOWN,
+    pygame.K_LEFT: LEFT, pygame.K_a: LEFT,
+    pygame.K_RIGHT: RIGHT, pygame.K_d: RIGHT,
+}
 
 
-class SNAKE:
-    def __init__(self):
-        self.body = [Vector2(5, 10), Vector2(4, 10), Vector2(3, 10)]
-        self.direction = Vector2(1, 0)
-        self.new_block = False
+def load_image(name: str) -> pygame.Surface:
+    return pygame.image.load(GRAPHICS_DIR / name).convert_alpha()
 
-        self.snake_design()
-        self.crunch_sound = pygame.mixer.Sound('Sound/crunch.wav')
 
-    def snake_design(self):
-        self.head_up = pygame.image.load('Graphics/head_up.png').convert_alpha()
-        self.head_down = pygame.image.load('Graphics/head_down.png').convert_alpha()
-        self.head_right = pygame.image.load('Graphics/head_right.png').convert_alpha()
-        self.head_left = pygame.image.load('Graphics/head_left.png').convert_alpha()
+def set_display_mode(size: int) -> pygame.Surface:
+    try:
+        return pygame.display.set_mode((size, size), vsync=1)
+    except pygame.error:
+        return pygame.display.set_mode((size, size))
 
-        self.tail_up = pygame.image.load('Graphics/tail_up.png').convert_alpha()
-        self.tail_down = pygame.image.load('Graphics/tail_down.png').convert_alpha()
-        self.tail_right = pygame.image.load('Graphics/tail_right.png').convert_alpha()
-        self.tail_left = pygame.image.load('Graphics/tail_left.png').convert_alpha()
 
-        self.body_vertical = pygame.image.load('Graphics/body_vertical.png').convert_alpha()
-        self.body_horizontal = pygame.image.load('Graphics/body_horizontal.png').convert_alpha()
+def load_high_scores() -> dict[str, int]:
+    try:
+        return json.loads(HIGH_SCORES_FILE.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
 
-        self.b_up_right = pygame.image.load('Graphics/b_up_right.png').convert_alpha()
-        self.b_up_left = pygame.image.load('Graphics/b_up_left.png').convert_alpha()
-        self.b_right_down = pygame.image.load('Graphics/b_right_down.png').convert_alpha()
-        self.b_left_down = pygame.image.load('Graphics/b_left_down.png').convert_alpha()
 
-    def draw_snake(self):
-        self.update_head_graphics()
-        self.update_tail_graphics()
+def save_high_scores(high_scores: dict[str, int]) -> None:
+    HIGH_SCORES_FILE.write_text(json.dumps(high_scores))
 
-        for index, block in enumerate(self.body):
-            x_snake = int(block.x * cell_size)
-            y_snake = int(block.y * cell_size)
-            block_rect = pygame.Rect(x_snake, y_snake, cell_size, cell_size)
 
-            if index == 0:
-                screen.blit(self.head, block_rect)
-            elif index == len(self.body) - 1:
-                screen.blit(self.tail, block_rect)
-            else:
-                previous_block = self.body[index + 1] - block
-                next_block = self.body[index - 1] - block
-                if previous_block.x == next_block.x:
-                    screen.blit(self.body_vertical, block_rect)
-                elif previous_block.y == next_block.y:
-                    screen.blit(self.body_horizontal, block_rect)
-                else:
-                    if previous_block.x == 1 and next_block.y == -1 or previous_block.y == -1 and next_block.x == 1:
-                        screen.blit(self.b_up_right, block_rect)
-                    elif previous_block.x == -1 and next_block.y == -1 or previous_block.y == -1 and next_block.x == -1:
-                        screen.blit(self.b_up_left, block_rect)
-                    elif previous_block.x == 1 and next_block.y == 1 or previous_block.y == 1 and next_block.x == 1:
-                        screen.blit(self.b_right_down, block_rect)
-                    elif previous_block.x == -1 and next_block.y == 1 or previous_block.y == 1 and next_block.x == -1:
-                        screen.blit(self.b_left_down, block_rect)
+class Fruit:
+    def __init__(self, image: pygame.Surface) -> None:
+        self.image = image
+        self.pos = Vector2(-1, -1)
 
-    def update_head_graphics(self):
-        head_relation = self.body[1] - self.body[0]
-        if head_relation == Vector2(0, 1):
-            self.head = self.head_up
-        elif head_relation == Vector2(0, -1):
-            self.head = self.head_down
-        elif head_relation == Vector2(-1, 0):
-            self.head = self.head_right
-        elif head_relation == Vector2(1, 0):
-            self.head = self.head_left
+    def randomize(self, occupied: list[Vector2], cell_number: int) -> None:
+        """Move the fruit to a random cell not covered by the snake or another fruit."""
+        while True:
+            self.pos = Vector2(random.randrange(cell_number), random.randrange(cell_number))
+            if self.pos not in occupied:
+                return
 
-    def update_tail_graphics(self):
-        tail_relation = self.body[-2] - self.body[-1]
-        if tail_relation == Vector2(0, -1):
-            self.tail = self.tail_up
-        elif tail_relation == Vector2(0, 1):
-            self.tail = self.tail_down
-        elif tail_relation == Vector2(1, 0):
-            self.tail = self.tail_right
-        elif tail_relation == Vector2(-1, 0):
-            self.tail = self.tail_left
+    def draw(self, screen: pygame.Surface) -> None:
+        rect = pygame.Rect(int(self.pos.x * CELL_SIZE), int(self.pos.y * CELL_SIZE),
+                           CELL_SIZE, CELL_SIZE)
+        screen.blit(self.image, rect)
 
-    def move_snake(self):
-        if self.new_block == True:
-            body_copy = self.body[:]
-            body_copy.insert(0, body_copy[0] + self.direction)
-            self.body = body_copy[:]
-            self.new_block = False
+
+class Snake:
+    def __init__(self) -> None:
+        self.crunch_sound = pygame.mixer.Sound(SOUND_DIR / "crunch.wav")
+        self._load_images()
+        self.reset(MAP_SIZES["Medium"])
+
+    def reset(self, cell_number: int) -> None:
+        mid = cell_number // 2
+        self.body = [Vector2(5, mid), Vector2(4, mid), Vector2(3, mid)]
+        self.prev_tail = self.body[-1]
+        self.direction = RIGHT
+        self.pending_turns: deque[Vector2] = deque()
+        self.grow_pending = False
+
+    def _load_images(self) -> None:
+        # Sprites are keyed by the offset from the head/tail to its neighbor,
+        # and body pieces by the pair of offsets to both neighbors.
+        self.head_images = {
+            (0, 1): load_image("head_up.png"),
+            (0, -1): load_image("head_down.png"),
+            (-1, 0): load_image("head_right.png"),
+            (1, 0): load_image("head_left.png"),
+        }
+        self.tail_images = {
+            (0, -1): load_image("tail_up.png"),
+            (0, 1): load_image("tail_down.png"),
+            (1, 0): load_image("tail_right.png"),
+            (-1, 0): load_image("tail_left.png"),
+        }
+        self.body_images = {
+            frozenset({(0, -1), (0, 1)}): load_image("body_vertical.png"),
+            frozenset({(-1, 0), (1, 0)}): load_image("body_horizontal.png"),
+            frozenset({(0, -1), (1, 0)}): load_image("b_up_right.png"),
+            frozenset({(0, -1), (-1, 0)}): load_image("b_up_left.png"),
+            frozenset({(0, 1), (1, 0)}): load_image("b_right_down.png"),
+            frozenset({(0, 1), (-1, 0)}): load_image("b_left_down.png"),
+        }
+
+    @property
+    def head(self) -> Vector2:
+        return self.body[0]
+
+    def queue_turn(self, new_direction: Vector2) -> None:
+        """Buffer up to two turns, applied one per movement tick.
+
+        Each turn is validated against the direction the snake will actually
+        be moving when it applies, so rapid key presses can never reverse the
+        snake into its own neck.
+        """
+        reference = self.pending_turns[-1] if self.pending_turns else self.direction
+        if len(self.pending_turns) < 2 and new_direction not in (reference, -reference):
+            self.pending_turns.append(new_direction)
+
+    def move(self) -> None:
+        if self.pending_turns:
+            self.direction = self.pending_turns.popleft()
+        self.prev_tail = self.body[-1]
+        new_head = self.head + self.direction
+        if self.grow_pending:
+            self.body = [new_head] + self.body
+            self.grow_pending = False
         else:
-            body_copy = self.body[:-1]
-            body_copy.insert(0, body_copy[0] + self.direction)
-            self.body = body_copy[:]
+            self.body = [new_head] + self.body[:-1]
 
-    def add_block(self):
-        self.new_block = True
-
-    def play_crunch_sound(self):
+    def grow(self) -> None:
+        self.grow_pending = True
         self.crunch_sound.play()
 
-    def reset(self):
-        self.body = [Vector2(5, 10), Vector2(4, 10), Vector2(3, 10)]
-        self.direction = Vector2(0, 0)
+    def draw(self, screen: pygame.Surface, t: float) -> None:
+        # Between ticks only the head and tail change cells, so the middle
+        # segments draw statically while the two ends slide between cells,
+        # turning discrete grid steps into continuous motion.
+        for index in range(1, len(self.body) - 1):
+            screen.blit(self._body_image(index), self._cell_rect(self.body[index]))
+        self._draw_tail(screen, t)
+        self._draw_head(screen, t)
+
+    def _cell_rect(self, pos: Vector2) -> pygame.Rect:
+        return pygame.Rect(round(pos.x * CELL_SIZE), round(pos.y * CELL_SIZE),
+                           CELL_SIZE, CELL_SIZE)
+
+    def _body_image(self, index: int) -> pygame.Surface:
+        to_previous = self.body[index + 1] - self.body[index]
+        to_next = self.body[index - 1] - self.body[index]
+        return self.body_images[frozenset({(to_previous.x, to_previous.y),
+                                           (to_next.x, to_next.y)})]
+
+    def _draw_head(self, screen: pygame.Surface, t: float) -> None:
+        relation = self.body[1] - self.body[0]
+        pos = self.body[1].lerp(self.body[0], t)
+        screen.blit(self.head_images[(relation.x, relation.y)], self._cell_rect(pos))
+
+    def _draw_tail(self, screen: pygame.Surface, t: float) -> None:
+        tail = self.body[-1]
+        if self.prev_tail == tail:  # the snake just grew; the tail hasn't moved
+            relation = self.body[-2] - tail
+            screen.blit(self.tail_images[(relation.x, relation.y)], self._cell_rect(tail))
+            return
+        # Cover the tail cell with the body piece that occupied it last tick,
+        # then slide the tail sprite over it from the vacated cell.
+        to_prev = self.prev_tail - tail
+        to_next = self.body[-2] - tail
+        underlay = self.body_images[frozenset({(to_prev.x, to_prev.y),
+                                               (to_next.x, to_next.y)})]
+        screen.blit(underlay, self._cell_rect(tail))
+        slide = tail - self.prev_tail
+        pos = self.prev_tail.lerp(tail, t)
+        screen.blit(self.tail_images[(slide.x, slide.y)], self._cell_rect(pos))
 
 
-class MAIN:
-    def __init__(self):
-        self.fruit = FRUIT()
-        self.snake = SNAKE()
-        self.game_over = False
-        while self.fruit.pos in self.snake.body:
-            self.fruit.randomize()
+class Game:
+    def __init__(self) -> None:
+        pygame.display.set_caption("Snake")
+        self.screen = set_display_mode(MENU_WINDOW_SIZE)
+        self.clock = pygame.time.Clock()
+        self.score_font = pygame.font.Font(None, 30)
+        self.title_font = pygame.font.Font(None, 50)
 
-    def update(self):
-        self.snake.move_snake()
-        self.check_collision()
-        self.check_fail()
+        self.apple_image = pygame.transform.scale(load_image("apple.png"),
+                                                  (CELL_SIZE, CELL_SIZE))
+        self.snake = Snake()
+        self.fruits: list[Fruit] = []
+        self.high_scores = load_high_scores()
 
-    def draw_elements(self):
-        self.draw_grass()
-        self.fruit.draw_fruit()
-        self.snake.draw_snake()
-        self.draw_score()
+        self.map_name = "Medium"
+        self.apple_count = 1
+        self.speed_name = "Normal"
+        self.cell_number = MAP_SIZES[self.map_name]
+        self.board_pixels = self.cell_number * CELL_SIZE
+        self.move_interval = SPEEDS[self.speed_name]
+        self.last_move_time = 0
 
-    def check_collision(self):
-        if self.fruit.pos == self.snake.body[0]:
-            self.fruit.randomize()
-            self.snake.add_block()
-            self.snake.play_crunch_sound()
+        self.state = "menu"  # "menu" | "playing" | "game_over"
+        self.menu_buttons: dict[tuple[str, str | int], pygame.Rect] = {}
+        self.play_button: pygame.Rect | None = None
+        self.play_again_button: pygame.Rect | None = None
+        self.menu_button: pygame.Rect | None = None
 
-    def check_fail(self):
-        if not 0 <= self.snake.body[0].x < cell_number or not 0 <= self.snake.body[0].y < cell_number:
-            print("Game over: Snake hit the wall.")
-            self.game_over = True
-        elif self.snake.direction != Vector2(0, 0):
-            for block in self.snake.body[1:]:
-                if block == self.snake.body[0]:
-                    print("Game over: Snake hit itself.")
-                    self.game_over = True
+    @property
+    def score(self) -> int:
+        return len(self.snake.body) - STARTING_LENGTH
 
-    def draw_grass(self):
-        grass_color = (167, 209, 61)
-        for row in range(cell_number):
-            for col in range(cell_number):
-                grass_rect = pygame.Rect(col * cell_size, row * cell_size, cell_size, cell_size)
-                if (row + col) % 2 == 0:
-                    pygame.draw.rect(screen, grass_color, grass_rect)
+    @property
+    def mode_key(self) -> str:
+        return f"{self.map_name}-{self.apple_count}-{self.speed_name}"
 
-    def draw_score(self):
-        score_text = str(len(self.snake.body) - 3)
-        score_surface = game_font.render(score_text, True, (56, 74, 12))
-        score_x = int(cell_size * cell_number - 40)
-        score_y = int(cell_size * cell_number - 40)
-        score_rect = score_surface.get_rect(center=(score_x, score_y))
-        apple_rect = apple.get_rect(midright=(score_rect.left, score_rect.centery))
-        bg_score_rect = pygame.Rect(apple_rect.left, apple_rect.top, apple_rect.width +
-                                    score_rect.width + 4, apple_rect.height + 4)
+    @property
+    def high_score(self) -> int:
+        return self.high_scores.get(self.mode_key, 0)
 
-        pygame.draw.rect(screen, (167, 209, 61), bg_score_rect)
-        screen.blit(score_surface, score_rect)
-        screen.blit(apple, apple_rect)
-        pygame.draw.rect(screen, (56, 74, 12), bg_score_rect, 2)
+    def occupied_cells(self) -> list[Vector2]:
+        return self.snake.body + [fruit.pos for fruit in self.fruits]
 
+    def run(self) -> None:
+        while True:
+            for event in pygame.event.get():
+                self.handle_event(event)
+            if self.state == "playing":
+                now = pygame.time.get_ticks()
+                if now - self.last_move_time >= self.move_interval:
+                    self.last_move_time = now
+                    self.update()
+            self.draw()
+            pygame.display.update()
+            self.clock.tick(FPS)
 
-def save_high_score(high_score):
-    with open("high_score.txt", "w") as f:
-        f.write(str(high_score))
-
-
-def load_high_score():
-    try:
-        with open("high_score.txt", "r") as f:
-            return int(f.read())
-    except FileNotFoundError:
-        return 0
-
-
-high_score = load_high_score()
-
-pygame.mixer.pre_init(44100, -16, 2, 512)
-pygame.init()
-cell_size = 40
-cell_number = 20
-screen = pygame.display.set_mode((cell_number * cell_size, cell_number * cell_size))
-clock = pygame.time.Clock()
-
-apple = pygame.image.load('Graphics/apple.png').convert_alpha()
-apple = pygame.transform.scale(apple, (cell_size, cell_size))
-
-SCREEN_UPDATE = pygame.USEREVENT
-pygame.time.set_timer(SCREEN_UPDATE, 150)
-
-main_game = MAIN()
-
-screen_width = cell_number * cell_size
-screen_height = cell_number * cell_size
-
-game_font = pygame.font.Font(None, 30)
-main_font = pygame.font.Font(None, 50)
-
-
-def draw_death_screen(score, high_score):
-    screen.fill((50, 50, 50))
-
-    game_over_surface = main_font.render('Game Over', True, (255, 255, 255))
-    score_surface = game_font.render(f'Your Score: {score}', True, (255, 255, 255))
-    high_score_surface = game_font.render(f'High Score: {high_score}', True, (255, 255, 255))
-    play_again_surface = game_font.render('Play Again', True, (255, 255, 255))
-
-    game_over_rect = game_over_surface.get_rect(center=(screen_width / 2, screen_height / 4))
-    score_rect = score_surface.get_rect(center=(screen_width / 2, screen_height / 3))
-    high_score_rect = high_score_surface.get_rect(center=(screen_width / 2, screen_height / 2))
-    play_again_rect = play_again_surface.get_rect(center=(screen_width / 2, screen_height * 3/4))
-
-    play_again_rect.inflate_ip(40, 20)
-
-    play_again_text_x = play_again_rect.x + (play_again_rect.width - play_again_surface.get_width()) // 2
-    play_again_text_y = play_again_rect.y + (play_again_rect.height - play_again_surface.get_height()) // 2
-
-    screen.blit(game_over_surface, game_over_rect)
-    screen.blit(score_surface, score_rect)
-    screen.blit(high_score_surface, high_score_rect)
-    screen.blit(play_again_surface, (play_again_text_x, play_again_text_y))
-
-    pygame.draw.rect(screen, (255, 255, 255), play_again_rect, 2)
-
-    return play_again_rect
-
-
-while True:
-    for event in pygame.event.get():
+    def handle_event(self, event: pygame.event.Event) -> None:
         if event.type == pygame.QUIT:
             pygame.quit()
             sys.exit()
-        if main_game.game_over:
-            play_again_button = draw_death_screen(len(main_game.snake.body) - 3, high_score)
+        if self.state == "menu":
             if event.type == pygame.MOUSEBUTTONDOWN:
-                mouse_pos = pygame.mouse.get_pos()
-                if play_again_button.collidepoint(mouse_pos):
-                    current_score = len(main_game.snake.body) - 3
-                    if current_score > high_score:
-                        high_score = current_score
-                        save_high_score(high_score)
-                    main_game = MAIN()
+                self.handle_menu_click(event.pos)
+        elif self.state == "playing":
+            if event.type == pygame.KEYDOWN and event.key in KEY_DIRECTIONS:
+                self.snake.queue_turn(KEY_DIRECTIONS[event.key])
+        else:  # game over
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if self.play_again_button and self.play_again_button.collidepoint(event.pos):
+                    self.start_game()
+                elif self.menu_button and self.menu_button.collidepoint(event.pos):
+                    self.open_menu()
+
+    def handle_menu_click(self, pos: tuple[int, int]) -> None:
+        for (group, value), rect in self.menu_buttons.items():
+            if rect.collidepoint(pos):
+                if group == "map":
+                    self.map_name = value
+                elif group == "apples":
+                    self.apple_count = value
+                else:
+                    self.speed_name = value
+                return
+        if self.play_button and self.play_button.collidepoint(pos):
+            self.start_game()
+
+    def start_game(self) -> None:
+        self.cell_number = MAP_SIZES[self.map_name]
+        self.board_pixels = self.cell_number * CELL_SIZE
+        self.screen = set_display_mode(self.board_pixels)
+        self.snake.reset(self.cell_number)
+        self.fruits = [Fruit(self.apple_image) for _ in range(self.apple_count)]
+        for fruit in self.fruits:
+            fruit.randomize(self.occupied_cells(), self.cell_number)
+        self.move_interval = SPEEDS[self.speed_name]
+        self.last_move_time = pygame.time.get_ticks()
+        self.state = "playing"
+
+    def open_menu(self) -> None:
+        self.screen = set_display_mode(MENU_WINDOW_SIZE)
+        self.state = "menu"
+
+    def update(self) -> None:
+        self.snake.move()
+        self.check_fruit()
+        self.check_fail()
+
+    def check_fruit(self) -> None:
+        for fruit in self.fruits:
+            if self.snake.head == fruit.pos:
+                self.snake.grow()
+                fruit.randomize(self.occupied_cells(), self.cell_number)
+
+    def check_fail(self) -> None:
+        head = self.snake.head
+        hit_wall = not (0 <= head.x < self.cell_number and 0 <= head.y < self.cell_number)
+        hit_self = head in self.snake.body[1:]
+        if hit_wall or hit_self:
+            self.state = "game_over"
+            if self.score > self.high_score:
+                self.high_scores[self.mode_key] = self.score
+                save_high_scores(self.high_scores)
+
+    def draw(self) -> None:
+        if self.state == "menu":
+            self.draw_menu()
+        elif self.state == "playing":
+            t = min((pygame.time.get_ticks() - self.last_move_time) / self.move_interval, 1.0)
+            self.screen.fill(GRASS_LIGHT)
+            self.draw_grass()
+            for fruit in self.fruits:
+                fruit.draw(self.screen)
+            self.snake.draw(self.screen, t)
+            self.draw_score()
         else:
-            if event.type == SCREEN_UPDATE:
-                main_game.update()
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_UP or event.key == pygame.K_w:
-                    if main_game.snake.direction.y != 1:
-                        main_game.snake.direction = Vector2(0, -1)
-                if event.key == pygame.K_DOWN or event.key == pygame.K_s:
-                    if main_game.snake.direction.y != -1:
-                        main_game.snake.direction = Vector2(0, 1)
-                if event.key == pygame.K_RIGHT or event.key == pygame.K_d:
-                    if main_game.snake.direction.x != -1:
-                        main_game.snake.direction = Vector2(1, 0)
-                if event.key == pygame.K_LEFT or event.key == pygame.K_a:
-                    if main_game.snake.direction.x != 1:
-                        main_game.snake.direction = Vector2(-1, 0)
+            self.draw_death_screen()
 
-    if not main_game.game_over:
-        screen.fill((175, 220, 75))
-        main_game.draw_elements()
-    else:
-        draw_death_screen(len(main_game.snake.body) - 3, high_score)
+    def draw_menu(self) -> None:
+        self.screen.fill(GRASS_LIGHT)
+        center_x = MENU_WINDOW_SIZE // 2
 
-    pygame.display.update()
-    clock.tick(60)
+        title = self.title_font.render("Snake", True, TEXT_GREEN)
+        self.screen.blit(title, title.get_rect(center=(center_x, 75)))
+
+        self.menu_buttons.clear()
+        self._draw_option_row("Map Size", 150, "map", list(MAP_SIZES), self.map_name)
+        self._draw_option_row("Apples", 270, "apples", list(APPLE_COUNTS), self.apple_count)
+        self._draw_option_row("Speed", 390, "speed", list(SPEEDS), self.speed_name)
+
+        self.play_button = self._draw_button("Play", (center_x, 520), selected=True)
+        high_score = self.score_font.render(f"High Score: {self.high_score}", True, TEXT_GREEN)
+        self.screen.blit(high_score, high_score.get_rect(center=(center_x, 585)))
+
+    def _draw_option_row(self, label: str, y: int, group: str,
+                         options: list, selected: str | int) -> None:
+        label_surface = self.score_font.render(label, True, TEXT_GREEN)
+        self.screen.blit(label_surface, label_surface.get_rect(center=(MENU_WINDOW_SIZE // 2, y)))
+
+        spacing = 150
+        start_x = MENU_WINDOW_SIZE // 2 - spacing * (len(options) - 1) // 2
+        for i, value in enumerate(options):
+            center = (start_x + i * spacing, y + 45)
+            self.menu_buttons[(group, value)] = self._draw_button(
+                str(value), center, selected=value == selected)
+
+    def _draw_button(self, text: str, center: tuple[int, int], selected: bool) -> pygame.Rect:
+        text_color = GRASS_LIGHT if selected else TEXT_GREEN
+        surface = self.score_font.render(text, True, text_color)
+        text_rect = surface.get_rect(center=center)
+        button_rect = text_rect.inflate(36, 18)
+        if selected:
+            pygame.draw.rect(self.screen, TEXT_GREEN, button_rect)
+        self.screen.blit(surface, text_rect)
+        pygame.draw.rect(self.screen, TEXT_GREEN, button_rect, 2)
+        return button_rect
+
+    def draw_grass(self) -> None:
+        for row in range(self.cell_number):
+            for col in range(row % 2, self.cell_number, 2):
+                rect = pygame.Rect(col * CELL_SIZE, row * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+                pygame.draw.rect(self.screen, GRASS_DARK, rect)
+
+    def draw_score(self) -> None:
+        score_surface = self.score_font.render(str(self.score), True, TEXT_GREEN)
+        score_rect = score_surface.get_rect(center=(self.board_pixels - 40,
+                                                    self.board_pixels - 40))
+        apple_rect = self.apple_image.get_rect(midright=(score_rect.left, score_rect.centery))
+        bg_rect = pygame.Rect(apple_rect.left, apple_rect.top,
+                              apple_rect.width + score_rect.width + 4, apple_rect.height + 4)
+
+        pygame.draw.rect(self.screen, GRASS_DARK, bg_rect)
+        self.screen.blit(score_surface, score_rect)
+        self.screen.blit(self.apple_image, apple_rect)
+        pygame.draw.rect(self.screen, TEXT_GREEN, bg_rect, 2)
+
+    def draw_death_screen(self) -> None:
+        self.screen.fill(DEATH_SCREEN_BG)
+        center_x = self.board_pixels // 2
+
+        title = self.title_font.render("Game Over", True, WHITE)
+        score = self.score_font.render(f"Your Score: {self.score}", True, WHITE)
+        high_score = self.score_font.render(f"High Score: {self.high_score}", True, WHITE)
+        play_again = self.score_font.render("Play Again", True, WHITE)
+        menu = self.score_font.render("Menu", True, WHITE)
+
+        self.screen.blit(title, title.get_rect(center=(center_x, self.board_pixels // 4)))
+        self.screen.blit(score, score.get_rect(center=(center_x, self.board_pixels // 3)))
+        self.screen.blit(high_score,
+                         high_score.get_rect(center=(center_x, self.board_pixels // 2)))
+
+        button_y = self.board_pixels * 3 // 4
+        play_again_rect = play_again.get_rect(center=(center_x - 90, button_y))
+        menu_rect = menu.get_rect(center=(center_x + 90, button_y))
+        self.play_again_button = play_again_rect.inflate(40, 20)
+        self.menu_button = menu_rect.inflate(40, 20)
+
+        self.screen.blit(play_again, play_again_rect)
+        self.screen.blit(menu, menu_rect)
+        pygame.draw.rect(self.screen, WHITE, self.play_again_button, 2)
+        pygame.draw.rect(self.screen, WHITE, self.menu_button, 2)
+
+
+def main() -> None:
+    pygame.mixer.pre_init(44100, -16, 2, 512)
+    pygame.init()
+    Game().run()
+
+
+if __name__ == "__main__":
+    main()
