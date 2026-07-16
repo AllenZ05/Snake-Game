@@ -2,7 +2,7 @@
 
 Pick a map size, apple count, and speed from the menu, steer with WASD
 or the arrow keys, eat apples to grow, and avoid the walls and your own
-tail.
+tail. Space/P pauses, Esc returns to the menu.
 """
 
 from __future__ import annotations
@@ -75,12 +75,18 @@ class Fruit:
         self.image = image
         self.pos = Vector2(-1, -1)
 
-    def randomize(self, occupied: list[Vector2], cell_number: int) -> None:
-        """Move the fruit to a random cell not covered by the snake or another fruit."""
-        while True:
-            self.pos = Vector2(random.randrange(cell_number), random.randrange(cell_number))
-            if self.pos not in occupied:
-                return
+    def randomize(self, occupied: list[Vector2], cell_number: int) -> bool:
+        """Move the fruit to a random cell not covered by the snake or another fruit.
+
+        Returns False if the board has no free cell left.
+        """
+        taken = {(int(v.x), int(v.y)) for v in occupied}
+        free = [(x, y) for x in range(cell_number) for y in range(cell_number)
+                if (x, y) not in taken]
+        if not free:
+            return False
+        self.pos = Vector2(random.choice(free))
+        return True
 
     def draw(self, screen: pygame.Surface) -> None:
         rect = pygame.Rect(int(self.pos.x * CELL_SIZE), int(self.pos.y * CELL_SIZE),
@@ -205,6 +211,7 @@ class Game:
         self.clock = pygame.time.Clock()
         self.score_font = pygame.font.Font(None, 30)
         self.title_font = pygame.font.Font(None, 50)
+        self.hint_font = pygame.font.Font(None, 24)
 
         self.apple_image = pygame.transform.scale(load_image("apple.png"),
                                                   (CELL_SIZE, CELL_SIZE))
@@ -220,7 +227,9 @@ class Game:
         self.move_interval = SPEEDS[self.speed_name]
         self.last_move_time = 0
 
-        self.state = "menu"  # "menu" | "playing" | "game_over"
+        self.state = "menu"  # "menu" | "playing" | "paused" | "game_over"
+        self.won = False
+        self.pause_start = 0
         self.menu_buttons: dict[tuple[str, str | int], pygame.Rect] = {}
         self.play_button: pygame.Rect | None = None
         self.play_again_button: pygame.Rect | None = None
@@ -228,7 +237,8 @@ class Game:
 
     @property
     def score(self) -> int:
-        return len(self.snake.body) - STARTING_LENGTH
+        # grow_pending counts the just-eaten apple before the body extends next tick.
+        return len(self.snake.body) + self.snake.grow_pending - STARTING_LENGTH
 
     @property
     def mode_key(self) -> str:
@@ -262,13 +272,29 @@ class Game:
             if event.type == pygame.MOUSEBUTTONDOWN:
                 self.handle_menu_click(event.pos)
         elif self.state == "playing":
-            if event.type == pygame.KEYDOWN and event.key in KEY_DIRECTIONS:
-                self.snake.queue_turn(KEY_DIRECTIONS[event.key])
+            if event.type == pygame.KEYDOWN:
+                if event.key in KEY_DIRECTIONS:
+                    self.snake.queue_turn(KEY_DIRECTIONS[event.key])
+                elif event.key in (pygame.K_SPACE, pygame.K_p):
+                    self.pause()
+                elif event.key == pygame.K_ESCAPE:
+                    self.open_menu()
+        elif self.state == "paused":
+            if event.type == pygame.KEYDOWN:
+                if event.key in (pygame.K_SPACE, pygame.K_p):
+                    self.resume()
+                elif event.key == pygame.K_ESCAPE:
+                    self.open_menu()
         else:  # game over
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if self.play_again_button and self.play_again_button.collidepoint(event.pos):
                     self.start_game()
                 elif self.menu_button and self.menu_button.collidepoint(event.pos):
+                    self.open_menu()
+            elif event.type == pygame.KEYDOWN:
+                if event.key in (pygame.K_SPACE, pygame.K_RETURN):
+                    self.start_game()
+                elif event.key == pygame.K_ESCAPE:
                     self.open_menu()
 
     def handle_menu_click(self, pos: tuple[int, int]) -> None:
@@ -300,6 +326,16 @@ class Game:
         self.screen = set_display_mode(MENU_WINDOW_SIZE)
         self.state = "menu"
 
+    def pause(self) -> None:
+        self.pause_start = pygame.time.get_ticks()
+        self.state = "paused"
+
+    def resume(self) -> None:
+        # Shift the move timer by the paused duration so the snake resumes
+        # exactly where it froze instead of jumping a cell.
+        self.last_move_time += pygame.time.get_ticks() - self.pause_start
+        self.state = "playing"
+
     def update(self) -> None:
         self.snake.move()
         self.check_fruit()
@@ -309,29 +345,41 @@ class Game:
         for fruit in self.fruits:
             if self.snake.head == fruit.pos:
                 self.snake.grow()
-                fruit.randomize(self.occupied_cells(), self.cell_number)
+                if not fruit.randomize(self.occupied_cells(), self.cell_number):
+                    # Board is full: retire this fruit; winning = eating the last one.
+                    self.fruits.remove(fruit)
+                    if not self.fruits:
+                        self.end_game(won=True)
+                break
 
     def check_fail(self) -> None:
         head = self.snake.head
         hit_wall = not (0 <= head.x < self.cell_number and 0 <= head.y < self.cell_number)
         hit_self = head in self.snake.body[1:]
         if hit_wall or hit_self:
-            self.state = "game_over"
-            if self.score > self.high_score:
-                self.high_scores[self.mode_key] = self.score
-                save_high_scores(self.high_scores)
+            self.end_game(won=False)
+
+    def end_game(self, won: bool) -> None:
+        self.state = "game_over"
+        self.won = won
+        if self.score > self.high_score:
+            self.high_scores[self.mode_key] = self.score
+            save_high_scores(self.high_scores)
 
     def draw(self) -> None:
         if self.state == "menu":
             self.draw_menu()
-        elif self.state == "playing":
-            t = min((pygame.time.get_ticks() - self.last_move_time) / self.move_interval, 1.0)
+        elif self.state in ("playing", "paused"):
+            now = self.pause_start if self.state == "paused" else pygame.time.get_ticks()
+            t = min((now - self.last_move_time) / self.move_interval, 1.0)
             self.screen.fill(GRASS_LIGHT)
             self.draw_grass()
             for fruit in self.fruits:
                 fruit.draw(self.screen)
             self.snake.draw(self.screen, t)
             self.draw_score()
+            if self.state == "paused":
+                self.draw_pause_overlay()
         else:
             self.draw_death_screen()
 
@@ -350,6 +398,9 @@ class Game:
         self.play_button = self._draw_button("Play", (center_x, 520), selected=True)
         high_score = self.score_font.render(f"High Score: {self.high_score}", True, TEXT_GREEN)
         self.screen.blit(high_score, high_score.get_rect(center=(center_x, 585)))
+        hint = self.hint_font.render(
+            "WASD / Arrows to move  -  Space to pause  -  Esc for menu", True, TEXT_GREEN)
+        self.screen.blit(hint, hint.get_rect(center=(center_x, 618)))
 
     def _draw_option_row(self, label: str, y: int, group: str,
                          options: list, selected: str | int) -> None:
@@ -393,11 +444,22 @@ class Game:
         self.screen.blit(self.apple_image, apple_rect)
         pygame.draw.rect(self.screen, TEXT_GREEN, bg_rect, 2)
 
+    def draw_pause_overlay(self) -> None:
+        overlay = pygame.Surface((self.board_pixels, self.board_pixels), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 130))
+        self.screen.blit(overlay, (0, 0))
+
+        title = self.title_font.render("Paused", True, WHITE)
+        hint = self.score_font.render("Space to resume  -  Esc for menu", True, WHITE)
+        center_x = self.board_pixels // 2
+        self.screen.blit(title, title.get_rect(center=(center_x, self.board_pixels // 2 - 25)))
+        self.screen.blit(hint, hint.get_rect(center=(center_x, self.board_pixels // 2 + 25)))
+
     def draw_death_screen(self) -> None:
         self.screen.fill(DEATH_SCREEN_BG)
         center_x = self.board_pixels // 2
 
-        title = self.title_font.render("Game Over", True, WHITE)
+        title = self.title_font.render("You Win!" if self.won else "Game Over", True, WHITE)
         score = self.score_font.render(f"Your Score: {self.score}", True, WHITE)
         high_score = self.score_font.render(f"High Score: {self.high_score}", True, WHITE)
         play_again = self.score_font.render("Play Again", True, WHITE)
@@ -418,6 +480,9 @@ class Game:
         self.screen.blit(menu, menu_rect)
         pygame.draw.rect(self.screen, WHITE, self.play_again_button, 2)
         pygame.draw.rect(self.screen, WHITE, self.menu_button, 2)
+
+        hint = self.hint_font.render("Space to replay  -  Esc for menu", True, WHITE)
+        self.screen.blit(hint, hint.get_rect(center=(center_x, self.board_pixels - 30)))
 
 
 def main() -> None:

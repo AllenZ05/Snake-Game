@@ -6,7 +6,8 @@ Inspired by the classic Snake Game. Navigate the snake using WASD or arrow keys 
 
 - **Smooth Snake Movement:** Fluid 60 FPS animation with responsive WASD or arrow key inputs
 - **Game Options:** Pick from 3 map sizes (12x12, 16x16, 20x20), 3 speeds, and 1, 3, or 5 apples on screen at once, with a separate high score tracked for each combination
-- **Collision Detection:** Game-over triggers when the snake hits a wall or its own body
+- **Collision Detection:** Game-over triggers when the snake hits a wall or its own body — and filling the entire board wins the game
+- **Pause & Shortcuts:** Space or P pauses mid-game, Esc returns to the menu, and Space/Enter on the game-over screen instantly replays
 - **Sound Effects:** Immersive sounds to enhance the gameplay experience
 - **Score Tracking:** Dynamic game-over screen displays your score and high score after each round
 - **Engaging Graphics:** Fluid animations and attractive snake graphics for a user-friendly interface
