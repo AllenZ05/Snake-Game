@@ -5,11 +5,11 @@ Inspired by the classic Snake Game. Navigate the snake using WASD or arrow keys 
 ## Features
 
 - **Smooth Snake Movement:** Fluid 60 FPS animation with responsive WASD or arrow key inputs
-- **Game Options:** Pick from 3 map sizes (12x12, 16x16, 20x20), 3 speeds, and 1, 3, or 5 apples on screen at once, with a separate high score tracked for each combination
-- **Collision Detection:** Game-over triggers when the snake hits a wall or its own body — and filling the entire board wins the game
-- **Pause & Shortcuts:** Space or P pauses mid-game, Esc returns to the menu, and Space/Enter on the game-over screen instantly replays
+- **Game Options:** Pick from 3 map sizes (12x12, 16x16, 20x20), 3 speeds, 1, 3, or 5 apples on screen at once, and Solid or Wrap walls, with a separate high score tracked for each combination
+- **Collision Detection:** Game-over triggers when the snake hits a wall or its own body; in Wrap mode the snake passes through walls and comes out the opposite side instead
+- **Pause & Shortcuts:** Space or P pauses mid-game, Esc returns to the menu, and Space/Enter on the game-over screen instantly replays; each round starts on your first direction key
 - **Sound Effects:** Immersive sounds to enhance the gameplay experience
-- **Score Tracking:** Dynamic game-over screen displays your score and high score after each round
+- **Score Tracking:** Live score and per-mode best shown in a header bar above the board, plus a game-over screen recapping each round
 - **Engaging Graphics:** Fluid animations and attractive snake graphics for a user-friendly interface
 
 ## Tech Stack and tools used 
@@ -25,14 +25,15 @@ Inspired by the classic Snake Game. Navigate the snake using WASD or arrow keys 
    python3 -m venv .venv
    source .venv/bin/activate   # Windows: .venv\Scripts\activate
    ```
-   > pygame doesn't ship wheels for Python 3.14 yet — if the install fails, create the venv with an older Python, e.g. `python3.11 -m venv .venv`
+   > pygame doesn't ship wheels for Python 3.14 yet, so if the install fails, create the venv with an older Python, e.g. `python3.11 -m venv .venv`
 3. **Install** dependencies: `pip install -r requirements.txt`
 4. **Run** the game: `python snake.py`
 
 ## Timeline
 
-- **Main Development:** Oct 2023
-- **New Features Added:** Jan 2024
+- **Main Development (Oct 2023):** Built the core game from scratch with grid-based snake movement, fruit spawning, wall and self collisions, custom snake and grass graphics, score tracking, and sound effects
+- **New Features (Jan 2024):** Added the death screen with current and high scores, a play-again button, and improved text and UI styling
+- **Modern Overhaul (Jul 2026):** Rewrote movement as smooth 60 FPS animation, and added the game options menu (map size, apple count, speed), wrap-around walls mode, a score HUD above the board, pause, and per-mode high scores
 
 ## Video Demo 
 
