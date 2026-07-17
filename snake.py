@@ -9,6 +9,7 @@ unless they wrap. Space/P pauses, Esc returns to the menu.
 from __future__ import annotations
 
 import json
+import math
 import random
 import sys
 from collections import deque
@@ -80,10 +81,7 @@ class Fruit:
         self.eaten = False
 
     def randomize(self, occupied: list[Vector2], cell_number: int) -> bool:
-        """Move the fruit to a random cell not covered by the snake or another fruit.
-
-        Returns False if the board has no free cell left.
-        """
+        """Move to a random unoccupied cell; False if the board is full."""
         taken = {(int(v.x), int(v.y)) for v in occupied}
         free = [(x, y) for x in range(cell_number) for y in range(cell_number)
                 if (x, y) not in taken]
@@ -111,6 +109,7 @@ class Snake:
         self.body = [Vector2(5, mid), Vector2(4, mid), Vector2(3, mid)]
         self.prev_tail = self.body[-1]
         self.direction = RIGHT
+        self.tail_dir = (self.direction.x, self.direction.y)
         self.pending_turns: deque[Vector2] = deque()
         self.grow_pending = False
 
@@ -137,18 +136,34 @@ class Snake:
             frozenset({(0, 1), (1, 0)}): load_image("b_right_down.png"),
             frozenset({(0, 1), (-1, 0)}): load_image("b_left_down.png"),
         }
+        # The rows/columns the straight tube spans; end trimming stays inside
+        # this band so corner pieces keep their outer curve.
+        self.tube_rows = self.body_images[
+            frozenset({(-1, 0), (1, 0)})].get_bounding_rect()
+        self.tube_columns = self.body_images[
+            frozenset({(0, -1), (0, 1)})].get_bounding_rect()
+        # The bend-rounding tail tip: a disc mirrored from the tail sprite's
+        # own cap, resting tip_center_pull behind the center of its cell.
+        self.tip_radius = self.tube_rows.height // 2
+        tail_bounds = self.tail_images[(1, 0)].get_bounding_rect()
+        self.tip_center_pull = (CELL_SIZE // 2
+                                - tail_bounds.left - self.tip_radius)
+        cap = self.tail_images[(1, 0)].subsurface(
+            (tail_bounds.left, self.tube_rows.y,
+             self.tip_radius, self.tube_rows.height))
+        self.tip_image = pygame.Surface(
+            (2 * self.tip_radius, self.tube_rows.height), pygame.SRCALPHA)
+        self.tip_image.blit(cap, (0, 0))
+        self.tip_image.blit(pygame.transform.flip(cap, True, False),
+                            (self.tip_radius, 0))
 
     @property
     def head(self) -> Vector2:
         return self.body[0]
 
     def queue_turn(self, new_direction: Vector2) -> None:
-        """Buffer up to two turns, applied one per movement tick.
-
-        Each turn is validated against the direction the snake will actually
-        be moving when it applies, so rapid key presses can never reverse the
-        snake into its own neck.
-        """
+        """Buffer up to two turns, one per tick, each validated against the
+        direction it will apply on so the snake can never reverse into itself."""
         reference = self.pending_turns[-1] if self.pending_turns else self.direction
         if len(self.pending_turns) < 2 and new_direction not in (reference, -reference):
             self.pending_turns.append(new_direction)
@@ -156,6 +171,8 @@ class Snake:
     def move(self) -> None:
         if self.pending_turns:
             self.direction = self.pending_turns.popleft()
+        if self.body[-1] != self.prev_tail:  # unchanged means the snake grew
+            self.tail_dir = self._offset(self.body[-1], self.prev_tail)
         self.prev_tail = self.body[-1]
         new_head = self.head + self.direction
         if self.wrap:
@@ -172,12 +189,10 @@ class Snake:
         self.crunch_sound.play()
 
     def draw(self, screen: pygame.Surface, t: float) -> None:
-        # Between ticks only the head and tail change cells, so the middle
-        # segments draw statically while the two ends slide between cells,
-        # turning discrete grid steps into continuous motion.
+        # Only the two ends move between ticks: the middle draws statically
+        # while the head and tail slide, smoothing the grid steps.
         for index in range(2, len(self.body) - 1):
             screen.blit(self._body_image(index), self._cell_rect(self.body[index]))
-        self._draw_neck(screen, t)
         self._draw_tail(screen, t)
         self._draw_head(screen, t)
 
@@ -200,27 +215,24 @@ class Snake:
         to_next = self._offset(self.body[index - 1], self.body[index])
         return self.body_images[frozenset({to_previous, to_next})]
 
-    def _draw_neck(self, screen: pygame.Surface, t: float) -> None:
-        """Draw the segment behind the head, trimming its leading edge while
-        the head's rounded cap is still sliding over it — otherwise the tube's
-        square end pokes out around the cap at the start of every step."""
-        rect = self._cell_rect(self.body[1])
-        area = pygame.Rect(0, 0, CELL_SIZE, CELL_SIZE)
-        trim = max(0, CELL_SIZE // 2 - round(t * CELL_SIZE))
-        dx, dy = self._offset(self.body[0], self.body[1])
-        if dx > 0:
-            area.width -= trim
-        elif dx < 0:
-            area.left += trim
-            area.width -= trim
-            rect.left += trim
-        elif dy > 0:
-            area.height -= trim
+    def _trim_tube_end(self, piece: pygame.Surface, side: tuple[float, float],
+                       trim: int) -> pygame.Surface:
+        """Copy of a body piece with `trim` pixels of tube erased on the cell
+        edge facing `side`; only the tube band is touched so curves survive."""
+        if trim <= 0:
+            return piece
+        piece = piece.copy()
+        dx, dy = side
+        if dx:
+            band = self.tube_rows
+            hole = pygame.Rect(CELL_SIZE - trim if dx > 0 else 0, band.y,
+                               trim, band.height)
         else:
-            area.top += trim
-            area.height -= trim
-            rect.top += trim
-        screen.blit(self._body_image(1), rect, area)
+            band = self.tube_columns
+            hole = pygame.Rect(band.x, CELL_SIZE - trim if dy > 0 else 0,
+                               band.width, trim)
+        piece.fill((0, 0, 0, 0), hole)
+        return piece
 
     def _slide_blit(self, screen: pygame.Surface, image: pygame.Surface,
                     start: Vector2, end: Vector2, t: float) -> None:
@@ -233,24 +245,161 @@ class Snake:
             screen.blit(image, self._cell_rect(start.lerp(start + step, t)))
             screen.blit(image, self._cell_rect((end - step).lerp(end, t)))
 
+    def _bend_geometry(self, rect: pygame.Rect, s_in: tuple[float, float],
+                       s_out: tuple[float, float]):
+        """Pivot corner and sweep sense for a 90-degree bend entered through
+        side `s_in` of the cell and left through side `s_out`."""
+        pivot = Vector2(rect.left if s_in[0] + s_out[0] < 0 else rect.right,
+                        rect.top if s_in[1] + s_out[1] < 0 else rect.bottom)
+        start = Vector2(-s_out[0], -s_out[1])  # along the entering edge
+        sign = 1 if start.rotate(90) == Vector2(-s_in[0], -s_in[1]) else -1
+        return pivot, start, sign
+
+    def _erase_sector(self, piece: pygame.Surface, local_pivot: Vector2,
+                      start: Vector2, sign: int, lo: float, hi: float) -> None:
+        """Erase the sector of a corner piece between angles lo and hi,
+        measured from the entering edge around the bend's pivot."""
+        points = [local_pivot] + [
+            local_pivot + start.rotate(sign * (lo + (hi - lo) * k / 3))
+            * 2 * CELL_SIZE for k in range(4)]
+        pygame.draw.polygon(piece, (0, 0, 0, 0), points)
+
+    def _blit_tip(self, screen: pygame.Surface, center: Vector2) -> None:
+        screen.blit(self.tip_image, self.tip_image.get_rect(
+            center=(round(center.x), round(center.y))))
+
+    def _consume_entry(self, screen: pygame.Surface, cell: Vector2,
+                       s_in: tuple[float, float], s_out: tuple[float, float],
+                       reach: int) -> None:
+        """Draw cell's body piece erased behind the tail tip, whose center is
+        `reach` pixels past the entering edge: a straight tube is cut square
+        there, a corner along the matching spoke of its bend."""
+        piece = self.body_images[frozenset({s_in, s_out})]
+        rect = self._cell_rect(cell)
+        if s_out == (-s_in[0], -s_in[1]):
+            piece = self._trim_tube_end(piece, s_in, max(0, reach))
+        elif reach > 0:
+            piece = piece.copy()
+            pivot, start, sign = self._bend_geometry(rect, s_in, s_out)
+            self._erase_sector(
+                piece, pivot - Vector2(rect.topleft), start, sign, 0,
+                math.degrees(math.atan2(reach, CELL_SIZE // 2)))
+        screen.blit(piece, rect)
+
+    def _head_sweep(self, screen: pygame.Surface, t: float,
+                    to_back: tuple[float, float],
+                    to_front: tuple[float, float]) -> None:
+        """Rotate the head 90 degrees about the bend's inner corner while the
+        corner piece grows in behind it, erased a few degrees behind its base
+        so the piece's edge stays hidden under it."""
+        rect = self._cell_rect(self.body[1])
+        pivot, start, sign = self._bend_geometry(rect, to_back, to_front)
+        angle = 90 * t
+        piece = self.body_images[frozenset({to_back, to_front})].copy()
+        self._erase_sector(piece, pivot - Vector2(rect.topleft), start, sign,
+                           angle + 3, 96)
+        screen.blit(piece, rect)
+        # transform.rotate and Vector2.rotate spin opposite ways on a y-down
+        # screen, hence the mismatched signs.
+        rotated = pygame.transform.rotate(self.head_images[to_back],
+                                          -sign * angle)
+        center = pivot + (Vector2(rect.center) - pivot).rotate(sign * angle)
+        screen.blit(rotated, rotated.get_rect(
+            center=(round(center.x), round(center.y))))
+        landing = self.body[1] + Vector2(to_front)
+        if landing != self.body[0]:  # the bend straddles the wrap seam
+            shift = (self.body[0] - landing) * CELL_SIZE
+            screen.blit(rotated, rotated.get_rect(center=(
+                round(center.x + shift.x), round(center.y + shift.y))))
+
+    def _tail_sweep(self, screen: pygame.Surface, t: float,
+                    to_next: tuple[float, float],
+                    slide: tuple[float, float]) -> None:
+        """Glide the tail's tip disc around the bend it just vacated while
+        the corner piece is consumed behind it."""
+        tail = self.body[-1]
+        rect = self._cell_rect(self.prev_tail)
+        s_in = (-self.tail_dir[0], -self.tail_dir[1])
+        pivot, start, sign = self._bend_geometry(rect, s_in, slide)
+        angle = 90 * t
+
+        # The disc travels between the resting tip positions of the previous
+        # and next steps, pulled onto the tube's centerline in between.
+        arm = Vector2(rect.center) + Vector2(s_in) * self.tip_center_pull - pivot
+        squeeze = 1 - (1 - CELL_SIZE // 2 / arm.length()) * math.sin(math.pi * t)
+        center = pivot + arm.rotate(sign * angle) * squeeze
+
+        # Consume the piece up to the disc's spoke; the disc covers the cut.
+        lead = math.degrees(math.acos(max(-1.0, min(1.0, start.dot(arm)
+                                                    / arm.length()))))
+        piece = self.body_images[frozenset({s_in, slide})].copy()
+        self._erase_sector(piece, pivot - Vector2(rect.topleft), start, sign,
+                           0, angle + lead)
+        screen.blit(piece, rect)
+
+        # The landing cell's tube recedes to the disc's midline as it crosses.
+        depth = (center - Vector2(rect.center)).dot(Vector2(slide))
+        self._consume_entry(screen, tail, (-slide[0], -slide[1]), to_next,
+                            round(depth) - CELL_SIZE // 2)
+
+        self._blit_tip(screen, center)
+        landing = self.prev_tail + Vector2(slide)
+        if landing != tail:  # the bend straddles the wrap seam
+            shift = (tail - landing) * CELL_SIZE
+            self._blit_tip(screen, center + shift)
+
     def _draw_head(self, screen: pygame.Surface, t: float) -> None:
-        image = self.head_images[(-self.direction.x, -self.direction.y)]
-        self._slide_blit(screen, image, self.body[1], self.body[0], t)
+        # Also draws the piece behind the head: trimmed under the sliding cap
+        # when straight, growing in behind the sweep on a turn.
+        to_front = self._offset(self.body[0], self.body[1])
+        to_back = self._offset(self.body[2], self.body[1])
+        if to_back == (-to_front[0], -to_front[1]):
+            trim = max(0, CELL_SIZE // 2 - round(t * CELL_SIZE))
+            piece = self._trim_tube_end(self._body_image(1), to_front, trim)
+            screen.blit(piece, self._cell_rect(self.body[1]))
+            image = self.head_images[(-self.direction.x, -self.direction.y)]
+            self._slide_blit(screen, image, self.body[1], self.body[0], t)
+        else:
+            self._head_sweep(screen, t, to_back, to_front)
 
     def _draw_tail(self, screen: pygame.Surface, t: float) -> None:
         tail = self.body[-1]
         if self.prev_tail == tail:  # the snake just grew; the tail hasn't moved
             relation = self._offset(self.body[-2], tail)
-            screen.blit(self.tail_images[relation], self._cell_rect(tail))
+            if relation == self.tail_dir:
+                screen.blit(self.tail_images[relation], self._cell_rect(tail))
+            else:  # resting mid-bend, tip parked where the sweep will start
+                s_in = (-self.tail_dir[0], -self.tail_dir[1])
+                self._consume_entry(screen, tail, s_in, relation,
+                                    CELL_SIZE // 2 - self.tip_center_pull)
+                self._blit_tip(screen, Vector2(self._cell_rect(tail).center)
+                               + Vector2(s_in) * self.tip_center_pull)
             return
-        # Cover the tail cell with the body piece that occupied it last tick,
-        # then slide the tail sprite over it from the vacated cell.
+        # Cover the tail cell with last tick's body piece, cut back to the
+        # advancing cap, and slide the tail sprite over it.
         to_prev = self._offset(self.prev_tail, tail)
         to_next = self._offset(self.body[-2], tail)
-        underlay = self.body_images[frozenset({to_prev, to_next})]
-        screen.blit(underlay, self._cell_rect(tail))
         slide = self._offset(tail, self.prev_tail)
-        self._slide_blit(screen, self.tail_images[slide], self.prev_tail, tail, t)
+        reach = round(t * CELL_SIZE) - CELL_SIZE // 2 - self.tip_center_pull
+        if slide != self.tail_dir:
+            self._tail_sweep(screen, t, to_next, slide)
+        elif to_next == slide:  # straight ahead
+            self._consume_entry(screen, tail, to_prev, to_next, reach)
+            self._slide_blit(screen, self.tail_images[slide],
+                             self.prev_tail, tail, t)
+        else:
+            # Arriving at a bend: clip the straight sprite to the vacated
+            # cell so it can't bury the curve; past the edge its disc slides
+            # on alone to where the sweep will pick it up.
+            self._consume_entry(screen, tail, to_prev, to_next, reach)
+            clip = screen.get_clip()
+            screen.set_clip(self._cell_rect(self.prev_tail))
+            self._slide_blit(screen, self.tail_images[slide],
+                             self.prev_tail, tail, t)
+            screen.set_clip(clip)
+            if reach >= 0:
+                self._blit_tip(screen, Vector2(self._cell_rect(tail).center)
+                               + Vector2(slide) * (reach - CELL_SIZE // 2))
 
 
 class Game:
@@ -395,8 +544,7 @@ class Game:
         self.state = "paused"
 
     def resume(self) -> None:
-        # Shift the move timer by the paused duration so the snake resumes
-        # exactly where it froze instead of jumping a cell.
+        # Shift the move timer by the paused time so the snake resumes in place.
         self.last_move_time += pygame.time.get_ticks() - self.pause_start
         self.state = "playing"
 
@@ -416,8 +564,7 @@ class Game:
                 break
 
     def respawn_eaten_fruits(self) -> None:
-        # Deferred one tick so the apple stays visible while the mouth
-        # slides over it, instead of vanishing a full cell early.
+        # Deferred one tick so the apple stays visible while being swallowed.
         for fruit in list(self.fruits):
             if not fruit.eaten:
                 continue
