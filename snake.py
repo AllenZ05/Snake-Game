@@ -24,6 +24,9 @@ SOUND_DIR = BASE_DIR / "Sound"
 HIGH_SCORES_FILE = BASE_DIR / "high_scores.json"
 
 CELL_SIZE = 40
+# Half the quarter-circle arc the tube's centerline traces through a bend
+# cell; the tail tip rests at the arc's midpoint while rounding a corner.
+HALF_ARC = math.pi * CELL_SIZE / 8
 MAP_SIZES = {"Small": 12, "Medium": 16, "Large": 20}
 APPLE_COUNTS = (1, 3, 5)
 SPEEDS = {"Slow": 200, "Normal": 150, "Fast": 100}  # ms per move
@@ -268,22 +271,31 @@ class Snake:
         screen.blit(self.tip_image, self.tip_image.get_rect(
             center=(round(center.x), round(center.y))))
 
+    def _bend_point(self, cell: Vector2, s_in: tuple[float, float],
+                    s_out: tuple[float, float], deg: float) -> Vector2:
+        """Point on a bend cell's centerline arc, `deg` degrees past the
+        midpoint of its entering edge."""
+        pivot, start, sign = self._bend_geometry(self._cell_rect(cell),
+                                                 s_in, s_out)
+        return pivot + (start * (CELL_SIZE // 2)).rotate(sign * deg)
+
     def _consume_entry(self, screen: pygame.Surface, cell: Vector2,
                        s_in: tuple[float, float], s_out: tuple[float, float],
-                       reach: int) -> None:
-        """Draw cell's body piece erased behind the tail tip, whose center is
-        `reach` pixels past the entering edge: a straight tube is cut square
-        there, a corner along the matching spoke of its bend."""
+                       reach: float) -> None:
+        """Draw cell's body piece erased behind the tail tip, whose center
+        has travelled `reach` along the centerline from the entering edge: a
+        straight tube is cut square there, a corner at the matching angle of
+        its arc. The tip's disc caps the cut in both cases."""
         piece = self.body_images[frozenset({s_in, s_out})]
         rect = self._cell_rect(cell)
         if s_out == (-s_in[0], -s_in[1]):
-            piece = self._trim_tube_end(piece, s_in, max(0, reach))
+            piece = self._trim_tube_end(piece, s_in, max(0, round(reach)))
         elif reach > 0:
             piece = piece.copy()
             pivot, start, sign = self._bend_geometry(rect, s_in, s_out)
             self._erase_sector(
                 piece, pivot - Vector2(rect.topleft), start, sign, 0,
-                math.degrees(math.atan2(reach, CELL_SIZE // 2)))
+                math.degrees(reach / (CELL_SIZE // 2)))
         screen.blit(piece, rect)
 
     def _head_sweep(self, screen: pygame.Surface, t: float,
@@ -315,38 +327,31 @@ class Snake:
     def _tail_sweep(self, screen: pygame.Surface, t: float,
                     to_next: tuple[float, float],
                     slide: tuple[float, float]) -> None:
-        """Glide the tail's tip disc around the bend it just vacated while
-        the corner piece is consumed behind it."""
+        """The tail is rounding the bend it just vacated: its tip disc picks
+        up at the arc's midpoint, follows the tube's centerline around the
+        corner and runs on into the landing cell. Both cells are erased
+        exactly up to the tip, so the disc caps a clean tube throughout."""
         tail = self.body[-1]
-        rect = self._cell_rect(self.prev_tail)
+        landing = self.prev_tail + Vector2(slide)  # tail, but unwrapped
         s_in = (-self.tail_dir[0], -self.tail_dir[1])
-        pivot, start, sign = self._bend_geometry(rect, s_in, slide)
-        angle = 90 * t
-
-        # The disc travels between the resting tip positions of the previous
-        # and next steps, pulled onto the tube's centerline in between.
-        arm = Vector2(rect.center) + Vector2(s_in) * self.tip_center_pull - pivot
-        squeeze = 1 - (1 - CELL_SIZE // 2 / arm.length()) * math.sin(math.pi * t)
-        center = pivot + arm.rotate(sign * angle) * squeeze
-
-        # Consume the piece up to the disc's spoke; the disc covers the cut.
-        lead = math.degrees(math.acos(max(-1.0, min(1.0, start.dot(arm)
-                                                    / arm.length()))))
-        piece = self.body_images[frozenset({s_in, slide})].copy()
-        self._erase_sector(piece, pivot - Vector2(rect.topleft), start, sign,
-                           0, angle + lead)
-        screen.blit(piece, rect)
-
-        # The landing cell's tube recedes to the disc's midline as it crosses.
-        depth = (center - Vector2(rect.center)).dot(Vector2(slide))
-        self._consume_entry(screen, tail, (-slide[0], -slide[1]), to_next,
-                            round(depth) - CELL_SIZE // 2)
-
+        back = (-slide[0], -slide[1])
+        into_landing = (HALF_ARC if to_next != slide  # zigzag: next arc's half
+                        else CELL_SIZE // 2 - self.tip_center_pull)
+        s = (HALF_ARC + into_landing) * t
+        self._consume_entry(screen, self.prev_tail, s_in, slide, HALF_ARC + s)
+        self._consume_entry(screen, tail, back, to_next, s - HALF_ARC)
+        if s <= HALF_ARC:  # still rounding the bend
+            center = self._bend_point(self.prev_tail, s_in, slide,
+                                      45 + math.degrees(s / (CELL_SIZE // 2)))
+        elif to_next != slide:  # crossing into the zigzag's next bend
+            center = self._bend_point(landing, back, to_next, math.degrees(
+                (s - HALF_ARC) / (CELL_SIZE // 2)))
+        else:
+            center = (Vector2(self._cell_rect(landing).center)
+                      + Vector2(slide) * (s - HALF_ARC - CELL_SIZE // 2))
         self._blit_tip(screen, center)
-        landing = self.prev_tail + Vector2(slide)
         if landing != tail:  # the bend straddles the wrap seam
-            shift = (tail - landing) * CELL_SIZE
-            self._blit_tip(screen, center + shift)
+            self._blit_tip(screen, center + (tail - landing) * CELL_SIZE)
 
     def _draw_head(self, screen: pygame.Surface, t: float) -> None:
         # Also draws the piece behind the head: trimmed under the sliding cap
@@ -368,38 +373,49 @@ class Snake:
             relation = self._offset(self.body[-2], tail)
             if relation == self.tail_dir:
                 screen.blit(self.tail_images[relation], self._cell_rect(tail))
-            else:  # resting mid-bend, tip parked where the sweep will start
+            else:  # resting mid-bend, parked at the arc's midpoint
                 s_in = (-self.tail_dir[0], -self.tail_dir[1])
-                self._consume_entry(screen, tail, s_in, relation,
-                                    CELL_SIZE // 2 - self.tip_center_pull)
-                self._blit_tip(screen, Vector2(self._cell_rect(tail).center)
-                               + Vector2(s_in) * self.tip_center_pull)
+                self._consume_entry(screen, tail, s_in, relation, HALF_ARC)
+                self._blit_tip(screen,
+                               self._bend_point(tail, s_in, relation, 45))
             return
         # Cover the tail cell with last tick's body piece, cut back to the
         # advancing cap, and slide the tail sprite over it.
         to_prev = self._offset(self.prev_tail, tail)
         to_next = self._offset(self.body[-2], tail)
         slide = self._offset(tail, self.prev_tail)
-        reach = round(t * CELL_SIZE) - CELL_SIZE // 2 - self.tip_center_pull
         if slide != self.tail_dir:
             self._tail_sweep(screen, t, to_next, slide)
         elif to_next == slide:  # straight ahead
-            self._consume_entry(screen, tail, to_prev, to_next, reach)
+            self._consume_entry(screen, tail, to_prev, to_next,
+                                round(t * CELL_SIZE) - CELL_SIZE // 2
+                                - self.tip_center_pull)
             self._slide_blit(screen, self.tail_images[slide],
                              self.prev_tail, tail, t)
         else:
-            # Arriving at a bend: clip the straight sprite to the vacated
-            # cell so it can't bury the curve; past the edge its disc slides
-            # on alone to where the sweep will pick it up.
-            self._consume_entry(screen, tail, to_prev, to_next, reach)
-            clip = screen.get_clip()
-            screen.set_clip(self._cell_rect(self.prev_tail))
-            self._slide_blit(screen, self.tail_images[slide],
-                             self.prev_tail, tail, t)
-            screen.set_clip(clip)
-            if reach >= 0:
-                self._blit_tip(screen, Vector2(self._cell_rect(tail).center)
-                               + Vector2(slide) * (reach - CELL_SIZE // 2))
+            # Arriving at a bend: the tip runs straight to the corner's edge,
+            # then along the centerline arc to its midpoint, where next
+            # tick's sweep picks it up. The straight sprite is clipped to the
+            # vacated cell so it can't bury the curve; on the arc the disc
+            # takes over as the tip.
+            run = CELL_SIZE // 2 + self.tip_center_pull
+            s = (run + HALF_ARC) * t
+            self._consume_entry(screen, tail, to_prev, to_next, s - run)
+            if s <= run:
+                clip = screen.get_clip()
+                screen.set_clip(self._cell_rect(self.prev_tail))
+                self._slide_blit(screen, self.tail_images[slide],
+                                 self.prev_tail, tail, s / CELL_SIZE)
+                screen.set_clip(clip)
+            else:
+                center = self._bend_point(tail, to_prev, to_next,
+                                          math.degrees((s - run)
+                                                       / (CELL_SIZE // 2)))
+                self._blit_tip(screen, center)
+                entered = self.prev_tail + Vector2(slide)
+                if entered != tail:  # arrived across the wrap seam
+                    self._blit_tip(screen,
+                                   center + (entered - tail) * CELL_SIZE)
 
 
 class Game:
