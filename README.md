@@ -2,12 +2,12 @@
 
 A desktop Snake game built with Python and Pygame, preserving the original bright-green checkerboard and blue snake artwork with subtle interface improvements.
 
-![Snake gameplay](docs/screenshots/gameplay.png)
+https://github.com/user-attachments/assets/ace73ade-3ee0-4d42-868a-ffef13b5f889
 
 ## Features
 
 - **Smooth movement:** 60 FPS rendering, curved turns, and a two-turn input buffer.
-- **54 ways to play:** three board sizes (12×12, 16×16, 20×20), three speeds, 1/3/5 apples, and solid or wraparound walls. Each combination keeps its own record.
+- **72 ways to play:** three board sizes (12×12, 16×16, 20×20), three speeds, 1/3/5/7 apples, and solid or wraparound walls. Each combination keeps its own record.
 - **Original artwork at its original size:** the original blue snake and 40-unit cells keep their on-screen size. The window fits the selected map.
 - **Crisp Retina rendering:** text and controls render at the display's full pixel density. Sprite pixels are replicated without blur filters, and pause/results panels preserve the surrounding board's colors.
 - **Subtle UI polish:** consistently sized buttons, hover/pressed/focus feedback, a start hint, and pause/results panels over the board.
@@ -67,7 +67,7 @@ The game stays paused after you return from another window. Resume when you're r
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-The suite uses SDL's dummy video and audio drivers, so it doesn't open a window or play sound. It covers all 54 modes, full-board wins, startup continuity, bite timing, turns and wrapping, record persistence, focus-loss pause, keyboard controls, mouse controls, original sprite preservation, 2× text rendering, and unchanged sprite colors under pause/results panels. Physical Retina output also needs a native-window check; the dummy driver cannot verify it.
+The suite uses SDL's dummy video and audio drivers, so it doesn't open a window or play sound. It covers all 72 modes, full-board wins, startup continuity, bite timing, turns and wrapping, record persistence, focus-loss pause, keyboard controls, mouse controls, original sprite preservation, 2× text rendering, and unchanged sprite colors under pause/results panels. Physical Retina output also needs a native-window check; the dummy driver cannot verify it.
 
 ## Timeline
 

@@ -98,7 +98,7 @@ class GameUI:
 
     def option_row(self, game, label, group, values, y):
         self.text(label, (320, y), 28)
-        width = 132
+        width = min(132, (420 - (len(values) - 1) * 12) // len(values))
         start = 320 - (len(values) * width + (len(values) - 1) * 12) // 2
         for index, value in enumerate(values):
             self.button(game, (start + index * (width + 12), y + 24, width, 44),
@@ -125,7 +125,7 @@ class GameUI:
     def draw_menu(self, game):
         self.text("Snake", (320, 70), 50)
         self.option_row(game, "Map Size", "map_name", ("Small", "Medium", "Large"), 140)
-        self.option_row(game, "Apples", "apple_count", (1, 3, 5), 236)
+        self.option_row(game, "Apples", "apple_count", (1, 3, 5, 7), 236)
         self.option_row(game, "Speed", "speed_name", ("Slow", "Normal", "Fast"), 332)
         self.option_row(game, "Walls", "walls_name", ("Solid", "Wrap"), 428)
         volume = ("Off", "Quiet", "On")

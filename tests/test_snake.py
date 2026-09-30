@@ -68,7 +68,7 @@ class GameTests(unittest.TestCase):
                             for state in ("ready", "paused", "game_over"):
                                 g.state = state
                                 g.draw()
-        self.assertEqual(len(keys), 54)
+        self.assertEqual(len(keys), 72)
 
     def test_first_input_preserves_the_visible_snake_position(self):
         g = self.game
@@ -98,9 +98,9 @@ class GameTests(unittest.TestCase):
         g.crunch_sound.play.assert_called_once()
         self.assertEqual(snake.load_high_scores()[g.mode_key], 1)
 
-    def test_full_board_wins_with_exact_score_for_one_and_five_apples(self):
+    def test_full_board_wins_with_exact_score_for_every_apple_count(self):
         g = self.game
-        for apples in (1, 5):
+        for apples in snake.APPLE_COUNTS:
             with self.subTest(apples=apples):
                 g.map_name = "Small"
                 g.apple_count = apples

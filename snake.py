@@ -32,7 +32,7 @@ CELL_SIZE = 40
 # cell; the tail tip rests at the arc's midpoint while rounding a corner.
 HALF_ARC = math.pi * CELL_SIZE / 8
 MAP_SIZES = {"Small": 12, "Medium": 16, "Large": 20}
-APPLE_COUNTS = (1, 3, 5)
+APPLE_COUNTS = (1, 3, 5, 7)
 SPEEDS = {"Slow": 200, "Normal": 150, "Fast": 100}  # ms per move
 WALL_MODES = ("Solid", "Wrap")
 FPS = 60
