@@ -11,17 +11,21 @@ from __future__ import annotations
 import json
 import math
 import random
-import sys
+import tempfile
 from collections import deque
 from pathlib import Path
 
 import pygame
 from pygame.math import Vector2
 
+from display import GameDisplay
+from ui import GameUI, HUD_HEIGHT, VIEW_SIZE
+
 BASE_DIR = Path(__file__).resolve().parent
 GRAPHICS_DIR = BASE_DIR / "Graphics"
 SOUND_DIR = BASE_DIR / "Sound"
 HIGH_SCORES_FILE = BASE_DIR / "high_scores.json"
+SETTINGS_FILE = BASE_DIR / "settings.json"
 
 CELL_SIZE = 40
 # Half the quarter-circle arc the tube's centerline traces through a bend
@@ -31,16 +35,17 @@ MAP_SIZES = {"Small": 12, "Medium": 16, "Large": 20}
 APPLE_COUNTS = (1, 3, 5)
 SPEEDS = {"Slow": 200, "Normal": 150, "Fast": 100}  # ms per move
 WALL_MODES = ("Solid", "Wrap")
-MENU_SIZE = (640, 720)
-HUD_HEIGHT = 60
 FPS = 60
 STARTING_LENGTH = 3
-
-GRASS_LIGHT = (175, 220, 75)
-GRASS_DARK = (167, 209, 61)
-TEXT_GREEN = (56, 74, 12)
-DEATH_SCREEN_BG = (50, 50, 50)
-WHITE = (255, 255, 255)
+VOLUMES = {"Off": 0.0, "Quiet": 0.3, "On": 0.7}
+OPTIONS = {
+    "map_name": tuple(MAP_SIZES),
+    "apple_count": APPLE_COUNTS,
+    "speed_name": tuple(SPEEDS),
+    "walls_name": WALL_MODES,
+    "volume_name": tuple(VOLUMES),
+    "motion_name": ("Full", "Reduced"),
+}
 
 UP = Vector2(0, -1)
 DOWN = Vector2(0, 1)
@@ -56,32 +61,58 @@ KEY_DIRECTIONS = {
 
 
 def load_image(name: str) -> pygame.Surface:
-    return pygame.image.load(GRAPHICS_DIR / name).convert_alpha()
-
-
-def set_display_mode(width: int, height: int) -> pygame.Surface:
-    try:
-        return pygame.display.set_mode((width, height), vsync=1)
-    except pygame.error:
-        return pygame.display.set_mode((width, height))
+    loaded = pygame.image.load(GRAPHICS_DIR / name)
+    # Explicit RGBA conversion also works with SDL2 windows, which do not
+    # install a pygame.display surface for convert_alpha() to consult.
+    image = pygame.Surface(loaded.get_size(), pygame.SRCALPHA, 32)
+    image.blit(loaded, (0, 0))
+    return image
 
 
 def load_high_scores() -> dict[str, int]:
+    data = load_json(HIGH_SCORES_FILE)
+    return {key: value for key, value in data.items()
+            if isinstance(key, str) and type(value) is int and value >= 0}
+
+
+def load_json(path: Path) -> dict:
     try:
-        return json.loads(HIGH_SCORES_FILE.read_text())
-    except (FileNotFoundError, json.JSONDecodeError):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
         return {}
 
 
-def save_high_scores(high_scores: dict[str, int]) -> None:
-    HIGH_SCORES_FILE.write_text(json.dumps(high_scores))
+def save_json(path: Path, data: dict) -> bool:
+    """Replace a complete file atomically; unavailable storage isn't fatal."""
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8",
+                                         dir=path.parent, delete=False,
+                                         prefix=path.name + ".") as output:
+            temporary = Path(output.name)
+            json.dump(data, output, indent=2)
+            output.write("\n")
+        temporary.replace(path)
+        return True
+    except OSError:
+        return False
+    finally:
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+def save_high_scores(high_scores: dict[str, int]) -> bool:
+    return save_json(HIGH_SCORES_FILE, high_scores)
 
 
 class Fruit:
     def __init__(self, image: pygame.Surface) -> None:
         self.image = image
         self.pos = Vector2(-1, -1)
-        self.eaten = False
 
     def randomize(self, occupied: list[Vector2], cell_number: int) -> bool:
         """Move to a random unoccupied cell; False if the board is full."""
@@ -101,7 +132,6 @@ class Fruit:
 
 class Snake:
     def __init__(self) -> None:
-        self.crunch_sound = pygame.mixer.Sound(SOUND_DIR / "crunch.wav")
         self._load_images()
         self.reset(MAP_SIZES["Medium"], wrap=False)
 
@@ -189,7 +219,6 @@ class Snake:
 
     def grow(self) -> None:
         self.grow_pending = True
-        self.crunch_sound.play()
 
     def draw(self, screen: pygame.Surface, t: float) -> None:
         # Only the two ends move between ticks: the middle draws statically
@@ -420,46 +449,64 @@ class Snake:
 
 class Game:
     def __init__(self) -> None:
-        pygame.display.set_caption("Snake")
-        self.screen = set_display_mode(*MENU_SIZE)
+        self.display = GameDisplay(VIEW_SIZE)
+        self.screen = self.display.surface
         self.clock = pygame.time.Clock()
-        self.score_font = pygame.font.Font(None, 30)
-        self.title_font = pygame.font.Font(None, 50)
-        self.hint_font = pygame.font.Font(None, 24)
-
+        self.ui = GameUI()
         self.apple_image = pygame.transform.scale(load_image("apple.png"),
                                                   (CELL_SIZE, CELL_SIZE))
+        self.display.set_icon(self.apple_image)
         self.snake = Snake()
-        self.fruits: list[Fruit] = []
+        self.crunch_sound = None
+        if pygame.mixer.get_init():
+            try:
+                self.crunch_sound = pygame.mixer.Sound(SOUND_DIR / "crunch.wav")
+            except (pygame.error, OSError):
+                pass
         self.high_scores = load_high_scores()
-
-        self.map_name = "Medium"
-        self.apple_count = 1
-        self.speed_name = "Normal"
-        self.walls_name = "Solid"
+        self.scores_dirty = False
+        self.settings_dirty = False
+        defaults = {"map_name": "Medium", "apple_count": 1,
+                    "speed_name": "Normal", "walls_name": "Solid",
+                    "volume_name": "On",
+                    "motion_name": "Full"}
+        settings = load_json(SETTINGS_FILE)
+        for name, default in defaults.items():
+            value = settings.get(name, default)
+            valid = type(value) is type(default) and value in OPTIONS[name]
+            setattr(self, name, value if valid else default)
+        self.previous_volume = "On"
         self.cell_number = MAP_SIZES[self.map_name]
         self.board_pixels = self.cell_number * CELL_SIZE
         self.board_surface = pygame.Surface((self.board_pixels, self.board_pixels))
+        self.fruits: list[Fruit] = []
+        self.apples_eaten = 0
         self.move_interval = SPEEDS[self.speed_name]
         self.last_move_time = 0
-
-        self.state = "menu"  # "menu" | "ready" | "playing" | "paused" | "game_over"
-        self.won = False
         self.pause_start = 0
-        self.menu_buttons: dict[tuple[str, str | int], pygame.Rect] = {}
-        self.play_button: pygame.Rect | None = None
-        self.play_again_button: pygame.Rect | None = None
-        self.menu_button: pygame.Rect | None = None
+        self.state = "menu"
+        self.state_changed = pygame.time.get_ticks()
+        self.won = False
+        self.new_best = False
+        self.round_best = 0
+        self.round_key: str | None = None
+        self.death_reason = ""
+        self.bite_fruit: Fruit | None = None
+        self.score_time = -1000
+        self.effects: list[tuple[Vector2, int]] = []
+        self.focus_index = 0
+        self.keyboard_focus = False
+        self.pressed_action = None
+        self.running = True
 
     @property
     def score(self) -> int:
-        # grow_pending counts the just-eaten apple before the body extends next tick.
-        return len(self.snake.body) + self.snake.grow_pending - STARTING_LENGTH
+        return self.apples_eaten
 
     @property
     def mode_key(self) -> str:
         key = f"{self.map_name}-{self.apple_count}-{self.speed_name}"
-        if self.walls_name != "Solid":  # Solid omitted so older saved scores keep working
+        if self.walls_name != "Solid":  # Preserve existing score-file keys.
             key += f"-{self.walls_name}"
         return key
 
@@ -467,267 +514,295 @@ class Game:
     def high_score(self) -> int:
         return self.high_scores.get(self.mode_key, 0)
 
+    @property
+    def save_warning(self) -> str:
+        if self.scores_dirty:
+            return "Your best score could not be saved."
+        if self.settings_dirty:
+            return "Your settings could not be saved."
+        return ""
+
+    @property
+    def reduced_motion(self) -> bool:
+        return self.motion_name == "Reduced"
+
+    @property
+    def focus_groups(self) -> tuple[str, ...]:
+        if self.state == "menu":
+            return (*OPTIONS, "play")
+        if self.state in ("paused", "game_over"):
+            return ("primary", "menu")
+        if self.state == "ready":
+            return ("sound", "menu")
+        return ("sound", "pause")
+
+    @property
+    def focused_group(self) -> str | None:
+        return self.focus_groups[self.focus_index] if self.keyboard_focus else None
+
     def occupied_cells(self) -> list[Vector2]:
         return self.snake.body + [fruit.pos for fruit in self.fruits]
 
+    def change_state(self, state: str) -> None:
+        self.state = state
+        self.state_changed = pygame.time.get_ticks()
+        self.focus_index = 0
+        self.pressed_action = None
+        self.ui.buttons.clear()
+
+    def save_settings(self) -> None:
+        settings = {name: getattr(self, name) for name in OPTIONS}
+        self.settings_dirty = not save_json(SETTINGS_FILE, settings)
+
+    def remember_score(self) -> None:
+        if self.round_key and self.score > self.high_scores.get(self.round_key, 0):
+            self.high_scores[self.round_key] = self.score
+            self.scores_dirty = True
+        if self.scores_dirty:
+            self.scores_dirty = not save_high_scores(self.high_scores)
+
     def run(self) -> None:
-        while True:
-            for event in pygame.event.get():
-                self.handle_event(event)
-            if self.state == "playing":
-                now = pygame.time.get_ticks()
-                if now - self.last_move_time >= self.move_interval:
-                    self.last_move_time = now
-                    self.update()
-            self.draw()
-            pygame.display.update()
-            self.clock.tick(FPS)
+        try:
+            while self.running:
+                for event in pygame.event.get():
+                    self.handle_event(event)
+                if not self.running:
+                    break
+                self.advance(pygame.time.get_ticks())
+                self.draw()
+                self.display.present()
+                self.clock.tick(FPS)
+        finally:
+            self.remember_score()
+            if self.settings_dirty:
+                self.save_settings()
+            self.display.close()
+            pygame.quit()
 
     def handle_event(self, event: pygame.event.Event) -> None:
-        if event.type == pygame.QUIT:
-            pygame.quit()
-            sys.exit()
+        if event.type in (pygame.QUIT, pygame.WINDOWCLOSE):
+            self.remember_score()
+            self.running = False
+            return
+        if event.type == pygame.WINDOWFOCUSLOST:
+            self.pressed_action = None
+            if self.state == "playing":
+                self.pause()
+            return
+        if event.type == pygame.MOUSEMOTION:
+            self.keyboard_focus = False
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            self.keyboard_focus = False
+            self.pressed_action = self.ui.hit_test(event.pos, self.display.size)
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            action = self.ui.hit_test(event.pos, self.display.size)
+            if action is not None and action == self.pressed_action:
+                self.activate(action)
+            self.pressed_action = None
+        if event.type != pygame.KEYDOWN:
+            return
+        key = event.key
+        if key == pygame.K_m:
+            self.toggle_sound()
+            return
+        if key == pygame.K_TAB:
+            step = -1 if getattr(event, "mod", 0) & pygame.KMOD_SHIFT else 1
+            self.move_focus(step)
+            return
         if self.state == "menu":
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                self.handle_menu_click(event.pos)
-        elif self.state == "ready":
-            if event.type == pygame.KEYDOWN:
-                if event.key in KEY_DIRECTIONS:
-                    self.snake.queue_turn(KEY_DIRECTIONS[event.key])
-                    self.last_move_time = pygame.time.get_ticks()
-                    self.state = "playing"
-                elif event.key == pygame.K_ESCAPE:
-                    self.open_menu()
-        elif self.state == "playing":
-            if event.type == pygame.KEYDOWN:
-                if event.key in KEY_DIRECTIONS:
-                    self.snake.queue_turn(KEY_DIRECTIONS[event.key])
-                elif event.key in (pygame.K_SPACE, pygame.K_p):
-                    self.pause()
-                elif event.key == pygame.K_ESCAPE:
-                    self.open_menu()
-        elif self.state == "paused":
-            if event.type == pygame.KEYDOWN:
-                if event.key in (pygame.K_SPACE, pygame.K_p):
-                    self.resume()
-                elif event.key == pygame.K_ESCAPE:
-                    self.open_menu()
-        else:  # game over
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                if self.play_again_button and self.play_again_button.collidepoint(event.pos):
-                    self.start_game()
-                elif self.menu_button and self.menu_button.collidepoint(event.pos):
-                    self.open_menu()
-            elif event.type == pygame.KEYDOWN:
-                if event.key in (pygame.K_SPACE, pygame.K_RETURN):
-                    self.start_game()
-                elif event.key == pygame.K_ESCAPE:
-                    self.open_menu()
-
-    def handle_menu_click(self, pos: tuple[int, int]) -> None:
-        for (group, value), rect in self.menu_buttons.items():
-            if rect.collidepoint(pos):
-                if group == "map":
-                    self.map_name = value
-                elif group == "apples":
-                    self.apple_count = value
-                elif group == "speed":
-                    self.speed_name = value
+            if key in (pygame.K_UP, pygame.K_DOWN):
+                self.move_focus(-1 if key == pygame.K_UP else 1)
+            elif key in (pygame.K_LEFT, pygame.K_RIGHT):
+                self.keyboard_focus = True
+                self.cycle_option(-1 if key == pygame.K_LEFT else 1)
+            elif key == pygame.K_RETURN:
+                self.start_game()
+            elif key == pygame.K_SPACE:
+                if self.focused_group in OPTIONS:
+                    self.cycle_option(1)
                 else:
-                    self.walls_name = value
-                return
-        if self.play_button and self.play_button.collidepoint(pos):
+                    self.start_game()
+        elif self.state == "ready":
+            if key in KEY_DIRECTIONS:
+                direction = KEY_DIRECTIONS[key]
+                if direction != -self.snake.direction:
+                    self.snake.queue_turn(direction)
+                    self.last_move_time = pygame.time.get_ticks()
+                    self.change_state("playing")
+                    self.begin_step()
+            elif key == pygame.K_ESCAPE:
+                self.open_menu()
+            elif key == pygame.K_RETURN and self.focused_group:
+                self.activate((self.focused_group,))
+        elif self.state == "playing":
+            if key in KEY_DIRECTIONS:
+                self.snake.queue_turn(KEY_DIRECTIONS[key])
+            elif key in (pygame.K_SPACE, pygame.K_p):
+                self.pause()
+            elif key == pygame.K_ESCAPE:
+                self.open_menu()
+            elif key == pygame.K_RETURN and self.focused_group:
+                self.activate((self.focused_group,))
+        else:
+            if key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN):
+                self.move_focus(-1 if key in (pygame.K_LEFT, pygame.K_UP) else 1)
+            elif key == pygame.K_ESCAPE:
+                self.open_menu()
+            elif key == pygame.K_RETURN:
+                self.activate((self.focused_group or "primary",))
+            elif key == pygame.K_SPACE or (key == pygame.K_p and self.state == "paused"):
+                self.activate(("primary",))
+
+    def move_focus(self, step: int) -> None:
+        if not self.keyboard_focus:
+            self.focus_index = 0 if step > 0 else len(self.focus_groups) - 1
+        else:
+            self.focus_index = (self.focus_index + step) % len(self.focus_groups)
+        self.keyboard_focus = True
+
+    def cycle_option(self, step: int) -> None:
+        group = self.focused_group
+        if group in OPTIONS:
+            values = OPTIONS[group]
+            value = values[(values.index(getattr(self, group)) + step) % len(values)]
+            self.activate(("option", group, value))
+
+    def activate(self, action: tuple) -> None:
+        command = action[0]
+        if command == "option" and self.state == "menu":
+            _, group, value = action
+            setattr(self, group, value)
+            self.focus_index = self.focus_groups.index(group)
+            self.save_settings()
+        elif command == "play":
             self.start_game()
+        elif command == "sound":
+            self.toggle_sound()
+        elif command == "pause" and self.state == "playing":
+            self.pause()
+        elif command == "primary":
+            if self.state == "paused":
+                self.resume()
+            elif self.state == "game_over":
+                self.start_game()
+        elif command == "menu":
+            self.open_menu()
+
+    def toggle_sound(self) -> None:
+        if self.volume_name == "Off":
+            self.volume_name = self.previous_volume
+        else:
+            self.previous_volume = self.volume_name
+            self.volume_name = "Off"
+        if self.crunch_sound:
+            self.crunch_sound.set_volume(VOLUMES[self.volume_name])
+        self.save_settings()
 
     def start_game(self) -> None:
         self.cell_number = MAP_SIZES[self.map_name]
         self.board_pixels = self.cell_number * CELL_SIZE
-        self.screen = set_display_mode(self.board_pixels, HUD_HEIGHT + self.board_pixels)
+        self.screen = self.display.resize((self.board_pixels, HUD_HEIGHT + self.board_pixels))
         self.board_surface = pygame.Surface((self.board_pixels, self.board_pixels))
         self.snake.reset(self.cell_number, wrap=self.walls_name == "Wrap")
-        self.fruits = [Fruit(self.apple_image) for _ in range(self.apple_count)]
-        for fruit in self.fruits:
+        self.fruits = []
+        for _ in range(self.apple_count):
+            fruit = Fruit(self.apple_image)
             fruit.randomize(self.occupied_cells(), self.cell_number)
+            self.fruits.append(fruit)
+        self.apples_eaten = 0
+        self.round_key = self.mode_key
+        self.round_best = self.high_score
+        self.new_best = False
+        self.won = False
+        self.death_reason = ""
+        self.bite_fruit = None
+        self.effects.clear()
+        self.score_time = -1000
         self.move_interval = SPEEDS[self.speed_name]
-        self.state = "ready"  # the first direction key starts the round
+        self.change_state("ready")
 
     def open_menu(self) -> None:
-        self.screen = set_display_mode(*MENU_SIZE)
-        self.state = "menu"
+        self.remember_score()
+        self.screen = self.display.resize(VIEW_SIZE)
+        self.change_state("menu")
 
     def pause(self) -> None:
-        self.pause_start = pygame.time.get_ticks()
-        self.state = "paused"
+        now = pygame.time.get_ticks()
+        self.advance(now)
+        if self.state == "playing":
+            self.pause_start = now
+            self.change_state("paused")
 
     def resume(self) -> None:
-        # Shift the move timer by the paused time so the snake resumes in place.
-        self.last_move_time += pygame.time.get_ticks() - self.pause_start
-        self.state = "playing"
+        elapsed = pygame.time.get_ticks() - self.pause_start
+        self.last_move_time += elapsed
+        self.score_time += elapsed
+        self.effects = [(pos, start + elapsed) for pos, start in self.effects]
+        self.change_state("playing")
 
-    def update(self) -> None:
-        self.respawn_eaten_fruits()
-        if self.state != "playing":  # eating the last apple on a full board won
-            return
-        self.snake.move()
-        self.check_fruit()
-        self.check_fail()
-
-    def check_fruit(self) -> None:
-        for fruit in self.fruits:
-            if self.snake.head == fruit.pos:
-                self.snake.grow()
-                fruit.eaten = True
-                break
-
-    def respawn_eaten_fruits(self) -> None:
-        # Deferred one tick so the apple stays visible while being swallowed.
-        for fruit in list(self.fruits):
-            if not fruit.eaten:
-                continue
-            fruit.eaten = False
-            if not fruit.randomize(self.occupied_cells(), self.cell_number):
-                # Board is full: retire this fruit; winning = eating the last one.
-                self.fruits.remove(fruit)
-                if not self.fruits:
-                    self.end_game(won=True)
-
-    def check_fail(self) -> None:
-        head = self.snake.head
-        hit_wall = not (0 <= head.x < self.cell_number and 0 <= head.y < self.cell_number)
-        hit_self = head in self.snake.body[1:]
-        if hit_wall or hit_self:
+    def begin_step(self) -> None:
+        """Schedule one legal move. Rendering interpolates toward its result."""
+        direction = (self.snake.pending_turns[0] if self.snake.pending_turns
+                     else self.snake.direction)
+        target = self.snake.head + direction
+        if self.snake.wrap:
+            target = Vector2(target.x % self.cell_number, target.y % self.cell_number)
+        self.bite_fruit = next((f for f in self.fruits if f.pos == target), None)
+        occupied = self.snake.body if self.bite_fruit else self.snake.body[:-1]
+        if not (0 <= target.x < self.cell_number and 0 <= target.y < self.cell_number):
+            self.death_reason = "The edge got you. Another go?"
             self.end_game(won=False)
+        elif target in occupied:
+            self.death_reason = "A little too close to your tail."
+            self.end_game(won=False)
+        else:
+            if self.bite_fruit:
+                self.snake.grow()
+            self.snake.move()
+
+    def finish_step(self, now: int) -> None:
+        """Commit the bite only when the visible head reaches the apple."""
+        fruit = self.bite_fruit
+        if fruit is None:
+            return
+        self.bite_fruit = None
+        self.apples_eaten += 1
+        self.score_time = now
+        self.effects.append((fruit.pos.copy(), now))
+        if self.crunch_sound and VOLUMES[self.volume_name] > 0:
+            self.crunch_sound.set_volume(VOLUMES[self.volume_name])
+            self.crunch_sound.play()
+        self.fruits.remove(fruit)
+        self.remember_score()
+        if len(self.snake.body) == self.cell_number ** 2:
+            self.end_game(won=True)
+        elif fruit.randomize(self.occupied_cells(), self.cell_number):
+            self.fruits.append(fruit)
+
+    def advance(self, now: int) -> None:
+        if self.state != "playing":
+            return
+        # Keep fractional time between ticks. Bound catch-up after a long stall.
+        self.last_move_time = max(self.last_move_time, now - 4 * self.move_interval)
+        while self.state == "playing" and now - self.last_move_time >= self.move_interval:
+            self.finish_step(now)
+            if self.state != "playing":
+                break
+            self.last_move_time += self.move_interval
+            self.begin_step()
 
     def end_game(self, won: bool) -> None:
-        self.state = "game_over"
         self.won = won
-        if self.score > self.high_score:
-            self.high_scores[self.mode_key] = self.score
-            save_high_scores(self.high_scores)
+        self.new_best = self.score > self.round_best
+        self.remember_score()
+        self.change_state("game_over")
 
     def draw(self) -> None:
-        if self.state == "menu":
-            self.draw_menu()
-        elif self.state in ("ready", "playing", "paused"):
-            if self.state == "ready":
-                t = 1.0  # the snake rests fully in its cells until the round starts
-            else:
-                now = self.pause_start if self.state == "paused" else pygame.time.get_ticks()
-                t = min((now - self.last_move_time) / self.move_interval, 1.0)
-            board = self.board_surface
-            board.fill(GRASS_LIGHT)
-            self.draw_grass(board)
-            for fruit in self.fruits:
-                fruit.draw(board)
-            self.snake.draw(board, t)
-            self.draw_hud()
-            self.screen.blit(board, (0, HUD_HEIGHT))
-            if self.state == "paused":
-                self.draw_pause_overlay()
-        else:
-            self.draw_death_screen()
-
-    def draw_menu(self) -> None:
-        self.screen.fill(GRASS_LIGHT)
-        center_x = MENU_SIZE[0] // 2
-
-        title = self.title_font.render("Snake", True, TEXT_GREEN)
-        self.screen.blit(title, title.get_rect(center=(center_x, 70)))
-
-        self.menu_buttons.clear()
-        self._draw_option_row("Map Size", 140, "map", list(MAP_SIZES), self.map_name)
-        self._draw_option_row("Apples", 245, "apples", list(APPLE_COUNTS), self.apple_count)
-        self._draw_option_row("Speed", 350, "speed", list(SPEEDS), self.speed_name)
-        self._draw_option_row("Walls", 455, "walls", list(WALL_MODES), self.walls_name)
-
-        self.play_button = self._draw_button("Play", (center_x, 585), selected=True)
-        high_score = self.score_font.render(f"High Score: {self.high_score}", True, TEXT_GREEN)
-        self.screen.blit(high_score, high_score.get_rect(center=(center_x, 645)))
-        hint = self.hint_font.render(
-            "WASD / Arrows to move  -  Space to pause  -  Esc for menu", True, TEXT_GREEN)
-        self.screen.blit(hint, hint.get_rect(center=(center_x, 685)))
-
-    def _draw_option_row(self, label: str, y: int, group: str,
-                         options: list, selected: str | int) -> None:
-        label_surface = self.score_font.render(label, True, TEXT_GREEN)
-        self.screen.blit(label_surface, label_surface.get_rect(center=(MENU_SIZE[0] // 2, y)))
-
-        spacing = 150
-        start_x = MENU_SIZE[0] // 2 - spacing * (len(options) - 1) // 2
-        for i, value in enumerate(options):
-            center = (start_x + i * spacing, y + 45)
-            self.menu_buttons[(group, value)] = self._draw_button(
-                str(value), center, selected=value == selected)
-
-    def _draw_button(self, text: str, center: tuple[int, int], selected: bool) -> pygame.Rect:
-        text_color = GRASS_LIGHT if selected else TEXT_GREEN
-        surface = self.score_font.render(text, True, text_color)
-        text_rect = surface.get_rect(center=center)
-        button_rect = text_rect.inflate(36, 18)
-        if selected:
-            pygame.draw.rect(self.screen, TEXT_GREEN, button_rect)
-        self.screen.blit(surface, text_rect)
-        pygame.draw.rect(self.screen, TEXT_GREEN, button_rect, 2)
-        return button_rect
-
-    def draw_grass(self, surface: pygame.Surface) -> None:
-        for row in range(self.cell_number):
-            for col in range(row % 2, self.cell_number, 2):
-                rect = pygame.Rect(col * CELL_SIZE, row * CELL_SIZE, CELL_SIZE, CELL_SIZE)
-                pygame.draw.rect(surface, GRASS_DARK, rect)
-
-    def draw_hud(self) -> None:
-        pygame.draw.rect(self.screen, TEXT_GREEN,
-                         pygame.Rect(0, 0, self.board_pixels, HUD_HEIGHT))
-        apple_rect = self.apple_image.get_rect(midleft=(12, HUD_HEIGHT // 2))
-        self.screen.blit(self.apple_image, apple_rect)
-        score = self.score_font.render(str(self.score), True, WHITE)
-        self.screen.blit(score, score.get_rect(midleft=(apple_rect.right + 6,
-                                                        HUD_HEIGHT // 2)))
-        best = self.score_font.render(f"Best: {self.high_score}", True, WHITE)
-        self.screen.blit(best, best.get_rect(midright=(self.board_pixels - 16,
-                                                       HUD_HEIGHT // 2)))
-
-    def draw_pause_overlay(self) -> None:
-        center_x, center_y = self.screen.get_rect().center
-        title = self.title_font.render("Paused", True, WHITE)
-        hint = self.score_font.render("Space to resume  -  Esc for menu", True, WHITE)
-        title_rect = title.get_rect(center=(center_x, center_y - 22))
-        hint_rect = hint.get_rect(center=(center_x, center_y + 22))
-        panel = title_rect.union(hint_rect).inflate(50, 36)
-        pygame.draw.rect(self.screen, TEXT_GREEN, panel, border_radius=16)
-        self.screen.blit(title, title_rect)
-        self.screen.blit(hint, hint_rect)
-
-    def draw_death_screen(self) -> None:
-        self.screen.fill(DEATH_SCREEN_BG)
-        width, height = self.screen.get_size()
-        center_x = width // 2
-
-        title = self.title_font.render("You Win!" if self.won else "Game Over", True, WHITE)
-        score = self.score_font.render(f"Your Score: {self.score}", True, WHITE)
-        high_score = self.score_font.render(f"High Score: {self.high_score}", True, WHITE)
-        play_again = self.score_font.render("Play Again", True, WHITE)
-        menu = self.score_font.render("Menu", True, WHITE)
-
-        self.screen.blit(title, title.get_rect(center=(center_x, height // 4)))
-        self.screen.blit(score, score.get_rect(center=(center_x, height // 3)))
-        self.screen.blit(high_score,
-                         high_score.get_rect(center=(center_x, height // 2)))
-
-        button_y = height * 3 // 4
-        play_again_rect = play_again.get_rect(center=(center_x - 90, button_y))
-        menu_rect = menu.get_rect(center=(center_x + 90, button_y))
-        self.play_again_button = play_again_rect.inflate(40, 20)
-        self.menu_button = menu_rect.inflate(40, 20)
-
-        self.screen.blit(play_again, play_again_rect)
-        self.screen.blit(menu, menu_rect)
-        pygame.draw.rect(self.screen, WHITE, self.play_again_button, 2)
-        pygame.draw.rect(self.screen, WHITE, self.menu_button, 2)
-
-        hint = self.hint_font.render("Space to replay  -  Esc for menu", True, WHITE)
-        self.screen.blit(hint, hint.get_rect(center=(center_x, height - 30)))
+        self.screen = self.display.sync()
+        now = self.pause_start if self.state == "paused" else pygame.time.get_ticks()
+        progress = (min(max((now - self.last_move_time) / self.move_interval, 0), 1)
+                    if self.state in ("playing", "paused") else 1.0)
+        self.ui.draw(self, progress, now)
 
 
 def main() -> None:

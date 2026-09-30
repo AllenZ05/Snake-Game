@@ -11,3 +11,4 @@ __pycache__/
 
 # Runtime data
 high_scores.json
+settings.json
