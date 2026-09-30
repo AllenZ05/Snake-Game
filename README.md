@@ -68,10 +68,3 @@ The game stays paused after you return from another window. Resume when you're r
 ```
 
 The suite uses SDL's dummy video and audio drivers, so it doesn't open a window or play sound. It covers all 72 modes, full-board wins, startup continuity, bite timing, turns and wrapping, record persistence, focus-loss pause, keyboard controls, mouse controls, original sprite preservation, 2× text rendering, and unchanged sprite colors under pause/results panels. Physical Retina output also needs a native-window check; the dummy driver cannot verify it.
-
-## Timeline
-
-- **October 2023:** Original game, artwork, collision detection, scoring, and sound.
-- **January 2024:** Game-over screen and replay controls.
-- **July 2026:** Smooth animation, configurable rounds, wraparound walls, pause, and per-mode records.
-- **September 2026:** Subtle menu polish, keyboard controls, synchronized bite feedback, and gameplay/persistence fixes, preserving the original artwork and board sizing.
