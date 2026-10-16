@@ -4,7 +4,7 @@ A desktop Snake game built with Python and Pygame, preserving the original brigh
 
 https://github.com/user-attachments/assets/372d50bb-71fb-4cca-ac27-fe7ac840a08e
 
-[Download the demo (MP4, 4.2 MB)](docs/snake-demo.mp4?raw=true) if the player is unavailable on your phone or tablet.
+[Watch the demo in your browser](https://cdn.jsdelivr.net/gh/AllenZ05/Snake-Game@1e7ad36b4dd861e5aa222b64897077b3864f48d1/docs/snake-demo.mp4) if the embedded player is unavailable on your phone or tablet.
 
 ## Features
 
