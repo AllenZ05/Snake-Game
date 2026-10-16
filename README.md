@@ -2,7 +2,9 @@
 
 A desktop Snake game built with Python and Pygame, preserving the original bright-green checkerboard and blue snake artwork with subtle interface improvements.
 
-https://github.com/user-attachments/assets/ace73ade-3ee0-4d42-868a-ffef13b5f889
+https://github.com/user-attachments/assets/372d50bb-71fb-4cca-ac27-fe7ac840a08e
+
+[Download the demo (MP4, 4.2 MB)](docs/snake-demo.mp4?raw=true) if the player is unavailable on your phone or tablet.
 
 ## Features
 
